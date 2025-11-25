@@ -83,15 +83,30 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="6">
+                        <Grid>
+                            <!-- 背景层 -->
+                            <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="6"/>
+                            <!-- 悬停高亮层 (白色半透明) -->
+                            <Border x:Name="highlight" Background="White" CornerRadius="6" Opacity="0"/>
+                            <!-- 内容 -->
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="border" Property="Opacity" Value="0.9"/>
+                                <Setter TargetName="highlight" Property="Opacity" Value="0.2"/>
+                                <Setter TargetName="border" Property="Effect">
+                                    <Setter.Value>
+                                        <DropShadowEffect ShadowDepth="0" BlurRadius="10" Color="White" Opacity="0.3"/>
+                                    </Setter.Value>
+                                </Setter>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="highlight" Property="Opacity" Value="0"/>
                                 <Setter TargetName="border" Property="Opacity" Value="0.8"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Opacity" Value="0.5"/>
+                                <Setter TargetName="border" Property="Background" Value="Gray"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -197,6 +212,26 @@
         </Border.Background>
 
         <Grid>
+            <Grid.Resources>
+                <Storyboard x:Key="FadeInNotification">
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="NotificationPanel" Storyboard.TargetProperty="Visibility">
+                        <DiscreteObjectKeyFrame KeyTime="0:0:0" Value="{x:Static Visibility.Visible}"/>
+                    </ObjectAnimationUsingKeyFrames>
+                    <DoubleAnimation Storyboard.TargetName="NotificationPanel" Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.3"/>
+                    <ThicknessAnimation Storyboard.TargetName="NotificationPanel" Storyboard.TargetProperty="Margin" From="0,-10,0,0" To="0,20,0,0" Duration="0:0:0.3">
+                        <ThicknessAnimation.EasingFunction>
+                            <CubicEase EasingMode="EaseOut"/>
+                        </ThicknessAnimation.EasingFunction>
+                    </ThicknessAnimation>
+                </Storyboard>
+                <Storyboard x:Key="FadeOutNotification">
+                    <DoubleAnimation Storyboard.TargetName="NotificationPanel" Storyboard.TargetProperty="Opacity" From="1" To="0" Duration="0:0:0.3"/>
+                    <ObjectAnimationUsingKeyFrames Storyboard.TargetName="NotificationPanel" Storyboard.TargetProperty="Visibility">
+                        <DiscreteObjectKeyFrame KeyTime="0:0:0.3" Value="{x:Static Visibility.Collapsed}"/>
+                    </ObjectAnimationUsingKeyFrames>
+                </Storyboard>
+            </Grid.Resources>
+
             <Grid.RowDefinitions>
                 <RowDefinition Height="40"/> <!-- 标题栏 -->
                 <RowDefinition Height="60"/> <!-- 状态栏 -->
@@ -557,6 +592,31 @@
                     </Grid>
                 </TabItem>
             </TabControl>
+
+            <!-- Busy Indicator Overlay -->
+            <Grid x:Name="BusyIndicator" Grid.Row="0" Grid.RowSpan="3" Background="#80000000" Visibility="Collapsed" d:IsHidden="True">
+                <Border Background="White" CornerRadius="8" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="20" MinWidth="250">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="10" ShadowDepth="0" Opacity="0.3"/>
+                    </Border.Effect>
+                    <StackPanel>
+                        <ProgressBar IsIndeterminate="True" Height="6" Margin="0,0,0,15" BorderThickness="0" Background="#E0E0E0" Foreground="#0984E3"/>
+                        <TextBlock x:Name="BusyText" Text="正在处理，请稍候..." HorizontalAlignment="Center" Foreground="#555555" FontSize="14"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+            <!-- Notification Panel (Top Center) -->
+            <Border x:Name="NotificationPanel" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,20,0,0" 
+                    Background="#E8F5E9" CornerRadius="20" Padding="20,10" 
+                    Visibility="Collapsed" Opacity="0" Panel.ZIndex="200">
+                <Border.Effect>
+                    <DropShadowEffect ShadowDepth="2" BlurRadius="10" Opacity="0.2" Direction="270"/>
+                </Border.Effect>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock x:Name="NotificationIcon" Text="✓" Margin="0,0,10,0" Foreground="#4CAF50" FontSize="16" FontWeight="Bold"/>
+                    <TextBlock x:Name="NotificationText" Text="操作成功" Foreground="#388E3C" FontSize="14" VerticalAlignment="Center" FontWeight="Bold"/>
+                </StackPanel>
+            </Border>
         </Grid>
     </Border>
 </Window>

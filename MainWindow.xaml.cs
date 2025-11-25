@@ -38,6 +38,7 @@ namespace OPLUS_EDL
         private DiagClient _diagClient;
         private StreamingClient _streamingClient;
         private ModelManager _modelManager;
+        private DispatcherTimer _notificationTimer;
 
         public MainWindow()
         {
@@ -80,6 +81,49 @@ namespace OPLUS_EDL
                 System.Windows.MessageBox.Show($"启动失败: {ex.Message}\n\n{ex.StackTrace}", "错误", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
                 System.Windows.Application.Current.Shutdown();
             }
+        }
+
+        private void ShowToast(string message, bool isError = false)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                if (NotificationPanel == null) return;
+
+                // Set content
+                NotificationText.Text = message;
+                if (isError)
+                {
+                    NotificationPanel.Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FFEBEE")); // Light Red
+                    NotificationIcon.Text = "✕";
+                    NotificationIcon.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF5252")); // Red
+                    NotificationText.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#D32F2F"));
+                }
+                else
+                {
+                    NotificationPanel.Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#E8F5E9")); // Light Green
+                    NotificationIcon.Text = "✓";
+                    NotificationIcon.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#4CAF50")); // Green
+                    NotificationText.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#388E3C"));
+                }
+
+                // Play Animation
+                var sb = this.FindResource("FadeInNotification") as System.Windows.Media.Animation.Storyboard;
+                sb?.Begin();
+
+                // Reset Timer
+                if (_notificationTimer == null)
+                {
+                    _notificationTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+                    _notificationTimer.Tick += (s, e) =>
+                    {
+                        _notificationTimer.Stop();
+                        var sbOut = this.FindResource("FadeOutNotification") as System.Windows.Media.Animation.Storyboard;
+                        sbOut?.Begin();
+                    };
+                }
+                _notificationTimer.Stop();
+                _notificationTimer.Start();
+            });
         }
 
         private void RefreshModels()
@@ -295,6 +339,8 @@ namespace OPLUS_EDL
             if (sb.Length > 0)
             {
                 LogText.AppendText(sb.ToString());
+                // 自动滚动到底部
+                LogText.CaretIndex = LogText.Text.Length;
                 LogText.ScrollToEnd();
             }
         }
@@ -383,6 +429,7 @@ namespace OPLUS_EDL
                     if (foundEdl)
                     {
                         Log($"端口刷新完成。发现 EDL 设备。");
+                        ShowToast("发现 EDL 设备！");
                         break;
                     }
                     else if (timeoutSeconds > 0)
@@ -653,10 +700,17 @@ namespace OPLUS_EDL
             }
         }
 
-        private void SetUIBusy(bool isBusy)
+        private void SetUIBusy(bool isBusy, string message = "正在处理，请稍候...")
         {
             Dispatcher.Invoke(() =>
             {
+                // Toggle Busy Indicator
+                if (BusyIndicator != null)
+                {
+                    BusyIndicator.Visibility = isBusy ? Visibility.Visible : Visibility.Collapsed;
+                    if (isBusy && BusyText != null) BusyText.Text = message;
+                }
+
                 // Disable/Enable main action buttons
                 ReadGPTBtn.IsEnabled = !isBusy;
                 ReadPartBtn.IsEnabled = !isBusy;
@@ -695,7 +749,7 @@ namespace OPLUS_EDL
 
         private async void ReadGPTBtn_Click(object sender, RoutedEventArgs e)
         {
-            SetUIBusy(true);
+            SetUIBusy(true, "正在连接设备并读取分区表...");
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
 
@@ -728,6 +782,7 @@ namespace OPLUS_EDL
                                 Partitions.Clear();
                                 foreach (var p in partitions) Partitions.Add(p);
                                 Log($"成功加载 {Partitions.Count} 个分区。");
+                                ShowToast($"成功读取 {Partitions.Count} 个分区");
                             });
                         }
                     }
@@ -846,7 +901,7 @@ namespace OPLUS_EDL
 
         private async void ReadPartBtn_Click(object sender, RoutedEventArgs e)
         {
-            SetUIBusy(true);
+            SetUIBusy(true, "正在准备读取...");
             try
             {
                 // Use OpenFileDialog with ValidateNames = false to simulate folder selection
@@ -871,7 +926,7 @@ namespace OPLUS_EDL
 
         private async void WritePartBtn_Click(object sender, RoutedEventArgs e)
         {
-            SetUIBusy(true);
+            SetUIBusy(true, "正在准备写入...");
             try
             {
                 await PerformOperation("Write");
@@ -884,7 +939,7 @@ namespace OPLUS_EDL
 
         private async void ErasePartBtn_Click(object sender, RoutedEventArgs e)
         {
-            SetUIBusy(true);
+            SetUIBusy(true, "正在准备擦除...");
             try
             {
                 await PerformOperation("Erase");
@@ -1112,6 +1167,7 @@ namespace OPLUS_EDL
                             QCProgressBar.Value = 100; 
                             SpeedText.Text = "100 %  |  完成"; 
                             Log($"{operation} 全部完成。");
+                            ShowToast($"{operation} 操作全部完成");
                         });
                     }
                 }
@@ -1627,7 +1683,7 @@ namespace OPLUS_EDL
 
         private async void DeviceInfoBtn_Click(object sender, RoutedEventArgs e)
         {
-            SetUIBusy(true);
+            SetUIBusy(true, "正在读取设备信息...");
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
             
@@ -1837,7 +1893,7 @@ namespace OPLUS_EDL
 
         private async void SendAuthBtn_Click(object sender, RoutedEventArgs e)
         {
-            SetUIBusy(true);
+            SetUIBusy(true, "正在发送引导/验证...");
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
             try
