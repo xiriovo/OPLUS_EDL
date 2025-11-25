@@ -1052,7 +1052,21 @@ namespace OPLUS_EDL
                                 
                                 // 生成 rawprogram (仅一次或最后生成)
                                 if (part == selectedParts.Last())
-                                    GenerateRawProgram(selectedParts, Path.Combine(outputDir, "rawprogram.xml"));
+                                {
+                                    bool shouldGenerate = false;
+                                    Dispatcher.Invoke(() => shouldGenerate = UseOfficialLineCB.IsChecked == true);
+
+                                    if (shouldGenerate)
+                                    {
+                                        var groups = selectedParts.GroupBy(p => p.Lun);
+                                        foreach (var group in groups)
+                                        {
+                                            string xmlName = $"rawprogram{group.Key}.xml";
+                                            GenerateRawProgram(group.ToList(), Path.Combine(outputDir, xmlName));
+                                            Dispatcher.Invoke(() => Log($"已生成 {xmlName}"));
+                                        }
+                                    }
+                                }
                             }
                             // ------ [Write] 写入 ------
                             else if (operation == "Write")

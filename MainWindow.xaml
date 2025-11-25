@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:OPLUS_EDL"
         mc:Ignorable="d"
-        Title="OPPO EDL Flash Tool v1.1" Height="768" Width="1024"
+        Title="OPPO EDL Flash Tool v1.1" Height="900" Width="1200"
         WindowStartupLocation="CenterScreen"
         Background="Transparent" AllowsTransparency="True" WindowStyle="None"
         FontFamily="Microsoft YaHei UI">
@@ -399,53 +399,60 @@
                 </Grid>
 
                 <!-- 右侧面板 -->
-                <Grid Grid.Column="1">
+                <Grid Grid.Column="1" Margin="10,0,0,0">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
                     <Border Grid.Row="0" Style="{StaticResource GlassPanel}" Margin="0,0,0,10" Padding="10">
-                        <StackPanel>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
                                 <Rectangle Width="4" Height="16" Fill="#74B9FF" Margin="0,0,8,0" RadiusX="2" RadiusY="2"/>
                                 <TextBlock Text="功能控制台" FontWeight="Bold" Foreground="#74B9FF" FontSize="14"/>
                             </StackPanel>
-                            
-                            <Border Background="#20FFFFFF" CornerRadius="6" Padding="8" Margin="0,0,0,8">
+
+                            <Border Grid.Row="1" Background="#20FFFFFF" CornerRadius="6" Padding="8" Margin="0,0,0,10">
                                 <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    
-                                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,15,0">
-                                        <TextBlock Text="存储:" VerticalAlignment="Center" Margin="0,0,5,0" Foreground="{StaticResource TextDark}" FontSize="12" FontWeight="Bold"/>
-                                        <RadioButton Content="UFS" IsChecked="True" Margin="0,0,10,0" VerticalContentAlignment="Center" Foreground="{StaticResource TextDark}"/>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <StackPanel Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,8">
+                                        <TextBlock Text="存储类型:" VerticalAlignment="Center" Margin="0,0,10,0" Foreground="{StaticResource TextDark}" FontSize="12" FontWeight="Bold"/>
+                                        <RadioButton Content="UFS" IsChecked="True" Margin="0,0,15,0" VerticalContentAlignment="Center" Foreground="{StaticResource TextDark}"/>
                                         <RadioButton Content="EMMC" VerticalContentAlignment="Center" Foreground="{StaticResource TextDark}"/>
                                     </StackPanel>
 
-                                    <UniformGrid Grid.Column="1" Rows="1" Columns="3">
-                                        <CheckBox x:Name="SendLoaderCB" Content="发送引导" IsChecked="True" Foreground="{StaticResource TextDark}" VerticalAlignment="Center" ToolTip="首次操作请勾选"/>
-                                        <CheckBox x:Name="SkipSafeCB" Content="保护LUN5" IsChecked="True" Foreground="{StaticResource TextDark}" VerticalAlignment="Center" ToolTip="跳过敏感分区"/>
-                                        <CheckBox x:Name="OplusTestModeCB" Content="OPLUS验证" IsChecked="False" Foreground="{StaticResource TextDark}" VerticalAlignment="Center"/>
-                                        <CheckBox x:Name="SkipDataCB" Content="保留数据" IsChecked="True" Visibility="Collapsed"/>
-                                        <CheckBox x:Name="UseOfficialLineCB" Content="生成XML" Visibility="Collapsed"/>
-                                    </UniformGrid>
+                                    <WrapPanel Grid.Row="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <CheckBox x:Name="SendLoaderCB" Content="发送引导" IsChecked="True" Foreground="{StaticResource TextDark}" VerticalAlignment="Center" Margin="0,0,15,0"/>
+                                        <CheckBox x:Name="SkipSafeCB" Content="保护LUN5" IsChecked="True" Foreground="{StaticResource TextDark}" VerticalAlignment="Center" Margin="0,0,15,0"/>
+                                        <CheckBox x:Name="OplusTestModeCB" Content="OPLUS验证" IsChecked="False" Foreground="{StaticResource TextDark}" VerticalAlignment="Center" Margin="0,0,15,0"/>
+                                        <CheckBox x:Name="UseOfficialLineCB" Content="生成XML" IsChecked="False" Foreground="{StaticResource TextDark}" VerticalAlignment="Center" Margin="0,0,15,0"/>
+                                        <CheckBox x:Name="SkipDataCB" IsChecked="True" Visibility="Collapsed"/>
+                                    </WrapPanel>
                                 </Grid>
                             </Border>
 
-                            <Button x:Name="StopBtn" Content="停止当前操作 (STOP)" Style="{StaticResource BaseButton}" Background="{StaticResource BtnRed}" Margin="0,0,0,8" Height="24" FontSize="11" IsEnabled="False" Click="StopBtn_Click"/>
+                            <Button x:Name="StopBtn" Grid.Row="2" Content="停止当前操作 (STOP)" Style="{StaticResource BaseButton}" Background="{StaticResource BtnRed}" Margin="0,0,0,10" Height="35" FontSize="12" FontWeight="Bold" IsEnabled="False" Click="StopBtn_Click"/>
 
-                            <UniformGrid Columns="2" Rows="4" Height="140">
-                                <Button x:Name="DeviceInfoBtn" Content="读取设备信息" Style="{StaticResource BaseButton}" Background="{StaticResource BtnBlue}" Margin="0,0,3,3" Click="DeviceInfoBtn_Click"/>
-                                <Button x:Name="ReadGPTBtn" Content="1. 读取分区表" Style="{StaticResource BaseButton}" Background="{StaticResource BtnGreen}" Margin="3,0,0,3" Click="ReadGPTBtn_Click"/>
-                                
-                                <Button x:Name="ReadPartBtn" Content="读取选中分区 (Dump)" Style="{StaticResource BaseButton}" Background="{StaticResource BtnCyan}" Margin="0,3,3,3" Click="ReadPartBtn_Click"/>
-                                <Button x:Name="WritePartBtn" Content="写入选中分区 (Flash)" Style="{StaticResource BaseButton}" Background="{StaticResource BtnOrange}" Margin="3,3,0,3" Click="WritePartBtn_Click"/>
-                                
-                                <Button x:Name="ErasePartBtn" Content="擦除选中分区 (Erase)" Style="{StaticResource BaseButton}" Background="{StaticResource BtnOrange}" Margin="0,3,3,3" Click="ErasePartBtn_Click"/>
-                                <Button x:Name="WipeDataBtn" Content="清除数据 (Wipe)" Style="{StaticResource BaseButton}" Background="{StaticResource BtnRed}" Margin="3,3,0,3" Click="WipeDataBtn_Click">
+                            <UniformGrid Grid.Row="3" Columns="2" Rows="4">
+                                <Button x:Name="DeviceInfoBtn" Content="读取设备信息" Style="{StaticResource BaseButton}" Background="{StaticResource BtnBlue}" Margin="0,0,3,5" Height="45" Click="DeviceInfoBtn_Click"/>
+                                <Button x:Name="ReadGPTBtn" Content="1. 读取分区表" Style="{StaticResource BaseButton}" Background="{StaticResource BtnGreen}" Margin="3,0,0,5" Height="45" Click="ReadGPTBtn_Click"/>
+
+                                <Button x:Name="ReadPartBtn" Content="读取选中分区 (Dump)" Style="{StaticResource BaseButton}" Background="{StaticResource BtnCyan}" Margin="0,0,3,5" Height="45" Click="ReadPartBtn_Click"/>
+                                <Button x:Name="WritePartBtn" Content="写入选中分区 (Flash)" Style="{StaticResource BaseButton}" Background="{StaticResource BtnOrange}" Margin="3,0,0,5" Height="45" Click="WritePartBtn_Click"/>
+
+                                <Button x:Name="ErasePartBtn" Content="擦除选中分区 (Erase)" Style="{StaticResource BaseButton}" Background="{StaticResource BtnOrange}" Margin="0,0,3,5" Height="45" Click="ErasePartBtn_Click"/>
+                                <Button x:Name="WipeDataBtn" Content="清除数据 (Wipe)" Style="{StaticResource BaseButton}" Background="{StaticResource BtnRed}" Margin="3,0,0,5" Height="45" Click="WipeDataBtn_Click">
                                     <Button.ContextMenu>
                                         <ContextMenu>
                                             <MenuItem Header="清除用户数据 (Userdata)" Tag="EraseUserdata" Click="WipeMenuItem_Click"/>
@@ -453,8 +460,8 @@
                                         </ContextMenu>
                                     </Button.ContextMenu>
                                 </Button>
-                                
-                                <Button x:Name="ResetBtn" Content="高级重启菜单" Style="{StaticResource BaseButton}" Background="{StaticResource BtnPurple}" Margin="0,3,3,0" Click="ResetBtn_Click">
+
+                                <Button x:Name="ResetBtn" Content="高级重启菜单" Style="{StaticResource BaseButton}" Background="{StaticResource BtnPurple}" Margin="0,0,3,0" Height="45" Click="ResetBtn_Click">
                                     <Button.ContextMenu>
                                         <ContextMenu>
                                             <MenuItem Header="重启到系统" Tag="System" Click="RebootMenuItem_Click"/>
@@ -465,7 +472,7 @@
                                         </ContextMenu>
                                     </Button.ContextMenu>
                                 </Button>
-                                <Button x:Name="SwitchSlotBtn" Content="切换活动槽位 (A/B)" Style="{StaticResource BaseButton}" Background="{StaticResource BtnBlue}" Margin="3,3,0,0" Click="SwitchSlotBtn_Click">
+                                <Button x:Name="SwitchSlotBtn" Content="切换活动槽位 (A/B)" Style="{StaticResource BaseButton}" Background="{StaticResource BtnBlue}" Margin="3,0,0,0" Height="45" Click="SwitchSlotBtn_Click">
                                     <Button.ContextMenu>
                                         <ContextMenu>
                                             <MenuItem Header="切换到 Slot A" Tag="A" Click="SlotMenuItem_Click"/>
@@ -474,38 +481,40 @@
                                     </Button.ContextMenu>
                                 </Button>
                             </UniformGrid>
-                        </StackPanel>
+                        </Grid>
                     </Border>
 
-                    <Border Grid.Row="1" Style="{StaticResource GlassPanel}">
+                    <Border Grid.Row="1" Style="{StaticResource GlassPanel}" Margin="0,0,0,0">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
-                            
+
                             <Grid Grid.Row="0" Margin="0,0,0,5">
                                 <StackPanel Orientation="Horizontal">
                                     <Rectangle Width="4" Height="16" Fill="#A29BFE" Margin="0,0,8,0" RadiusX="2" RadiusY="2"/>
                                     <TextBlock Text="运行日志" FontWeight="Bold" Foreground="#A29BFE" FontSize="14"/>
                                 </StackPanel>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Button Content="清除" Height="20" FontSize="10" Padding="8,0" Background="#30000000" Foreground="#999" BorderThickness="0" Click="ClearLog_Click" Style="{StaticResource BaseButton}"/>
-                                </StackPanel>
+                                <Button Content="清空日志" HorizontalAlignment="Right" Height="22" FontSize="11" Padding="10,0" Background="#30000000" Foreground="#999" BorderThickness="0" Click="ClearLog_Click" Style="{StaticResource BaseButton}"/>
                             </Grid>
-                            
-                            <Border Grid.Row="1" Background="#90000000" CornerRadius="6" Padding="5" BorderThickness="1" BorderBrush="#20FFFFFF">
+
+                            <Border Grid.Row="1" Background="#95000000" CornerRadius="6" Padding="5" BorderThickness="1" BorderBrush="#30FFFFFF">
                                 <TextBox x:Name="LogText" 
+                                         Height="Auto"
                                          Background="Transparent" 
+                                         Foreground="#00FF00"
+                                         FontFamily="Consolas, Courier New" 
+                                         FontSize="12" 
                                          BorderThickness="0" 
                                          IsReadOnly="True" 
                                          VerticalScrollBarVisibility="Auto" 
                                          TextWrapping="Wrap" 
-                                         FontFamily="Consolas, Courier New" 
-                                         FontSize="11" 
-                                         Foreground="#00FF00" 
                                          AcceptsReturn="True"
-                                         VerticalContentAlignment="Top"/>
+                                         VerticalAlignment="Stretch" 
+                                         HorizontalAlignment="Stretch"
+                                         VerticalContentAlignment="Top"
+                                         Padding="5"/>
                             </Border>
                         </Grid>
                     </Border>
