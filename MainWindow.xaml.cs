@@ -724,43 +724,33 @@ namespace OPLUS_EDL
             }
         }
 
+        // ---------------------------------------------------------
+        // 优化 MainWindow.xaml.cs (GPT 读取逻辑)
+        // ---------------------------------------------------------
         private List<PartitionInfo> ReadGpt(FirehoseClient client, string defaultMemoryName, CancellationToken token = default)
         {
-            Log("正在读取 GPT 分区表 (使用 GptParser)...");
+            Log("正在读取 GPT 分区表...");
             
-            // Optimization: Try to read without configure first (like fh_loader --skip_configure)
-            // This avoids resetting state or causing errors on some devices after auth.
-            // We assume UFS/4096 initially as it's most common for these devices.
-            int sectorSize = 4096;
-            string memoryName = "ufs";
-            bool configured = false;
-
-            if (_detectedSectorSize > 0)
-            {
-                sectorSize = _detectedSectorSize;
-                memoryName = _detectedMemoryName;
-            }
+            int sectorSize = 4096; // 默认尝试 4096 (UFS)
+            if (_detectedSectorSize > 0) sectorSize = _detectedSectorSize;
 
             List<PartitionInfo> allPartitions = new List<PartitionInfo>();
 
-            // Helper function to read GPT for a specific LUN
+            // 内部函数：读取指定 LUN 的 GPT
             List<PartitionInfo>? ReadLunGpt(int lun, int currentSectorSize)
             {
                 if (token.IsCancellationRequested) return null;
                 try 
                 {
-                    // Reuse existing client
-                    // OPLUS Mechanism: Read fixed size with label "gptbackup0"
-                    // UFS (4096): 6 sectors (LBA 0-5) -> MBR + Header + 4 sectors of entries (128 entries)
-                    // eMMC (512): 34 sectors (LBA 0-33) -> MBR + Header + 32 sectors of entries (128 entries)
-                    int sectorsToRead = currentSectorSize == 4096 ? 6 : 34;
+                    // 读取 GPT 头和分区表 (通常前 34 个扇区足够涵盖大多数情况，UFS 甚至更少)
+                    // 为了保险，读取 34 个扇区 (34 * 4096 = 136KB)
+                    int sectorsToRead = 34; 
                     
-                    Log($"LUN {lun}: Reading {sectorsToRead} sectors (gptbackup0)...");
-                    byte[]? buffer = client.ReadData(lun, 0, sectorsToRead, currentSectorSize, token, label: "gptbackup0", filename: "gpt_backup0.bin");
+                    Log($"LUN {lun}: Reading {sectorsToRead} sectors...");
+                    byte[]? buffer = client.ReadData(lun, 0, sectorsToRead, currentSectorSize, token, label: "gpt", filename: "gpt_lun" + lun + ".bin");
                     
                     if (buffer == null) return null;
 
-                    // Parse with GptParser
                     var parser = new GptParser();
                     if (parser.Parse(buffer, currentSectorSize))
                     {
@@ -771,7 +761,8 @@ namespace OPLUS_EDL
                             StartSector = p.FirstLba.ToString(),
                             NumSectors = (p.LastLba - p.FirstLba + 1).ToString(),
                             SectorSize = currentSectorSize.ToString(),
-                            Size = (((double)(p.LastLba - p.FirstLba + 1) * currentSectorSize) / 1024.0).ToString("F2"),
+                            Size = FormatSize((long)((p.LastLba - p.FirstLba + 1) * (ulong)currentSectorSize)),
+                            SizeInKB = (long)((p.LastLba - p.FirstLba + 1) * (ulong)currentSectorSize / 1024),
                             IsSelected = true
                         }).ToList();
                     }
@@ -783,62 +774,55 @@ namespace OPLUS_EDL
                 return null;
             }
 
-            // 2. Try Read LUN 0 (Fast Path)
+            // 1. 尝试读取 LUN 0
             var lun0Parts = ReadLunGpt(0, sectorSize);
             
-            // 3. If failed, try Configure and Retry
-            if (lun0Parts == null)
+            // 如果失败且默认是 4096，尝试回退到 512
+            if (lun0Parts == null && sectorSize == 4096)
             {
-                Log("直接读取失败，尝试发送配置命令...");
-                RunConfigure(client);
-                configured = true;
-                sectorSize = _detectedSectorSize > 0 ? _detectedSectorSize : 4096;
-                memoryName = !string.IsNullOrEmpty(_detectedMemoryName) ? _detectedMemoryName : "ufs";
-                
-                lun0Parts = ReadLunGpt(0, sectorSize);
+                Log("LUN 0 (4K) 读取失败，尝试 512 字节扇区...");
+                lun0Parts = ReadLunGpt(0, 512);
+                if (lun0Parts != null) sectorSize = 512;
             }
 
             if (lun0Parts != null)
             {
                 allPartitions.AddRange(lun0Parts);
                 Log($"LUN 0: 成功加载 {lun0Parts.Count} 个分区");
-            }
-            else
-            {
-                Log("LUN 0: 读取失败");
-                // Try fallback to 512 bytes if we haven't configured and failed with 4096
-                if (!configured && sectorSize == 4096)
-                {
-                     Log("尝试使用 512 字节扇区大小...");
-                     lun0Parts = ReadLunGpt(0, 512);
-                     if (lun0Parts != null)
-                     {
-                         sectorSize = 512;
-                         allPartitions.AddRange(lun0Parts);
-                         Log($"LUN 0: 成功加载 {lun0Parts.Count} 个分区 (512B)");
-                     }
-                }
-            }
 
-            // 4. If UFS, read LUN 1-5
-            if (memoryName == "ufs" && lun0Parts != null)
-            {
+                // 2. 如果是 UFS，尝试读取 LUN 1-5
+                // 通常 UFS 设备有 LUN 0-5 (甚至更多，但 0-5 是标准的)
+                // 如果 LUN 0 读取成功，我们假设它是 UFS (或者 eMMC 只有一个 LUN)
+                // 我们可以尝试读取 LUN 1，如果成功则继续，失败则停止
                 for (int lun = 1; lun <= 5; lun++)
                 {
                     var lunParts = ReadLunGpt(lun, sectorSize);
-                    if (lunParts != null)
+                    if (lunParts != null && lunParts.Count > 0)
                     {
                         allPartitions.AddRange(lunParts);
                         Log($"LUN {lun}: 成功加载 {lunParts.Count} 个分区");
                     }
                     else
                     {
-                        break;
+                        // 如果 LUN 1 读取失败，可能不是 UFS 或者只有 LUN 0
+                        if (lun == 1) break; 
                     }
                 }
             }
+            else
+            {
+                Log("无法读取分区表。请检查连接或 Firehose 程序员是否匹配。");
+            }
 
             return allPartitions;
+        }
+
+        private string FormatSize(long bytes)
+        {
+            if (bytes >= 1024 * 1024 * 1024) return $"{(double)bytes / (1024 * 1024 * 1024):F2} GB";
+            if (bytes >= 1024 * 1024) return $"{(double)bytes / (1024 * 1024):F2} MB";
+            if (bytes >= 1024) return $"{(double)bytes / 1024:F2} KB";
+            return $"{bytes} B";
         }
 
         private async void ReadPartBtn_Click(object sender, RoutedEventArgs e)
@@ -2213,14 +2197,7 @@ namespace OPLUS_EDL
             set { _filename = value; OnPropertyChanged(nameof(Filename)); } 
         }
 
-        public long SizeInKB
-        {
-            get
-            {
-                if (double.TryParse(Size, out double s)) return (long)s;
-                return 0;
-            }
-        }
+        public long SizeInKB { get; set; }
 
         public string FormattedSize
         {

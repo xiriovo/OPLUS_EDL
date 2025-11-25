@@ -37,11 +37,10 @@ namespace OPLUS_EDL
         {
             if (_port != null && _port.IsOpen) return;
             _port = new SerialPort(_portName, 115200, Parity.None, 8, StopBits.One);
-            // 读写超时设置得稍长一些，防止大操作（如Erase）超时
-            _port.ReadTimeout = 30000; 
-            _port.WriteTimeout = 10000; 
-            _port.ReadBufferSize = INTERNAL_BUFFER_SIZE;
-            _port.WriteBufferSize = INTERNAL_BUFFER_SIZE;
+            _port.ReadTimeout = 5000; // 设置合理的读超时
+            _port.WriteTimeout = 5000;
+            _port.ReadBufferSize = 1024 * 1024; // 1MB 读缓冲
+            _port.WriteBufferSize = 1024 * 1024; // 1MB 写缓冲
             _port.Open();
         }
 
@@ -73,10 +72,14 @@ namespace OPLUS_EDL
             }
             
             if (response.Properties.TryGetValue("MaxPayloadSizeFromTargetInBytes", out var sizeFrom))
-                int.TryParse(sizeFrom, out MaxPayloadSizeFromTarget);
+            {
+                if (int.TryParse(sizeFrom, out int val)) MaxPayloadSizeFromTarget = val;
+            }
             
             if (response.Properties.TryGetValue("MaxPayloadSizeToTargetInBytesSupported", out var sizeTo))
-                int.TryParse(sizeTo, out MaxPayloadSizeToTarget);
+            {
+                if (int.TryParse(sizeTo, out int val)) MaxPayloadSizeToTarget = val;
+            }
 
             if (response.Properties.TryGetValue("TargetName", out var target))
                 TargetName = target;
@@ -715,121 +718,122 @@ namespace OPLUS_EDL
             }
         }
 
-        /// <summary>
-        /// 智能等待响应。不再使用轮询，而是流式解析 XML。
-        /// </summary>
+        // ---------------------------------------------------------
+        // 核心优化 1: 智能等待响应 (替代原来的轮询逻辑)
+        // ---------------------------------------------------------
         private QCResponse? WaitForResponse(bool expectRawData = false)
         {
             if (_port == null) return null;
 
             QCResponse response = new QCResponse();
-            StringBuilder xmlAccumulator = new StringBuilder();
-            byte[] tempBuffer = new byte[1024]; // 小缓冲区用于读取 XML 片段
-            DateTime startTime = DateTime.Now;
-
-            try
+            using (MemoryStream ms = new MemoryStream())
             {
-                while ((DateTime.Now - startTime).TotalSeconds < 30) // 30秒总超时
+                byte[] chunk = new byte[4096];
+                DateTime start = DateTime.Now;
+
+                try
                 {
-                    // 使用阻塞读取，避免 CPU 空转
-                    // 如果 buffer 里有数据，Read 会立即返回；如果没有，它会阻塞直到 ReadTimeout
-                    int bytesRead = 0;
-                    try 
+                    while ((DateTime.Now - start).TotalSeconds < 10) // 10秒总超时
                     {
-                        // 尝试读一点数据
-                        bytesRead = _port.Read(tempBuffer, 0, tempBuffer.Length);
-                    }
-                    catch (TimeoutException) 
-                    { 
-                        if (xmlAccumulator.Length > 0) 
+                        // 1. 尝试读取数据
+                        int bytesRead = 0;
+                        try 
                         {
-                             // 读超时了，但如果我们已经积攒了一些 XML，检查是否完整
-                             // 有些设备可能不发送换行符
+                            bytesRead = _port.Read(chunk, 0, chunk.Length);
                         }
-                        else continue; 
-                    }
-                    
-                    if (bytesRead > 0)
-                    {
-                        string chunk = Encoding.UTF8.GetString(tempBuffer, 0, bytesRead);
-                        xmlAccumulator.Append(chunk);
-
-                        string currentXml = xmlAccumulator.ToString();
-
-                        // 检查是否包含结束标签
-                        // Firehose XML 总是以 <data ... /> 或者 <data>...</data> 格式
-                        // 最常见的结束标志是 "</data>" 或者是自闭合的 "/>" (不太安全，因为 log 也是自闭合)
-                        // 我们主要寻找 "</data>"
-                        
-                        int endTagIndex = currentXml.IndexOf("</data>");
-                        if (endTagIndex >= 0)
+                        catch (TimeoutException) 
                         {
-                            // 找到了完整的 XML 块
-                            string completeXml = currentXml.Substring(0, endTagIndex + 7);
-                            
-                            // 解析这个 XML
-                            ParseXmlContent(completeXml, response);
-
-                            // 检查是否有剩余的二进制数据 (粘包情况)
-                            if (expectRawData && currentXml.Length > completeXml.Length)
+                            if (ms.Length > 0) 
                             {
-                                int extraLen = currentXml.Length - completeXml.Length;
-                                // 注意：这里有个坑，UTF8转换可能导致字节对齐问题。
-                                // 最稳妥的方法是记录字节索引，但为了简化代码，我们假设 XML 纯 ASCII。
-                                // 如果这一块逻辑非常关键，建议回退到字节级搜索。
-                                
-                                // 简单处理：重新从 tempBuffer 提取剩余字节比较安全，但逻辑复杂。
-                                // 鉴于 Firehose XML 都是 ASCII，这里用 string length 大概估算
-                                // 但更严谨的做法是：
-                                // 在字节数组中找 "</data>" 的二进制模式。
+                                // 超时但有数据，尝试解析
                             }
+                            else continue; 
+                        }
+
+                        if (bytesRead > 0)
+                        {
+                            ms.Write(chunk, 0, bytesRead);
                             
-                            // 针对 ReadData，如果在 buffer 里发现了 XML 结束，且后面还有数据，那就是 RawData
-                            // 为了简化，如果 expectRawData 为真，我们假设 XML 解析完后，
-                            // Port 缓冲区里剩下的（或者刚刚读多的）就是 RawData。
-                            // 由于我们上面用了 StringBuilder，这里的二进制分离比较难。
-                            // **改进方案**：对于 expectRawData，我们一旦解析到 Response="ACK" 且 Log 里有 "reading"，就立即返回。
-                            
-                            return response;
+                            // 2. 检查 XML
+                            // 为了性能，只转换目前收到的数据为字符串
+                            string currentStr = Encoding.UTF8.GetString(ms.ToArray());
+
+                            // 3. 检查是否有完整的 XML 结束标记
+                            int xmlEndIndex = -1;
+                            if (currentStr.Contains("</data>"))
+                            {
+                                xmlEndIndex = currentStr.IndexOf("</data>") + 7;
+                            }
+                            else 
+                            {
+                                // 寻找最后一个 <response ... />
+                                // 注意：Log 也是 <log ... />，所以要找 response
+                                int respIndex = currentStr.LastIndexOf("<response");
+                                if (respIndex >= 0)
+                                {
+                                    int closeIndex = currentStr.IndexOf("/>", respIndex);
+                                    if (closeIndex >= 0)
+                                    {
+                                        xmlEndIndex = closeIndex + 2;
+                                    }
+                                }
+                            }
+
+                            if (xmlEndIndex > 0)
+                            {
+                                // 4. 解析 XML
+                                string xmlContent = currentStr.Substring(0, xmlEndIndex);
+                                ParseXmlLogs(xmlContent, response);
+                                
+                                var match = Regex.Match(xmlContent, "<response value=\"([^\"]+)\"");
+                                if (match.Success)
+                                {
+                                    response.Response = match.Groups[1].Value;
+                                    
+                                    if (xmlContent.Contains("rawmode=\"true\"")) response.Properties["rawmode"] = "true";
+                                    if (xmlContent.Contains("MaxPayloadSizeFromTargetInBytes")) 
+                                    {
+                                        var sizeMatch = Regex.Match(xmlContent, "MaxPayloadSizeFromTargetInBytes=\"(\\d+)\"");
+                                        if(sizeMatch.Success) response.Properties["MaxPayloadSizeFromTargetInBytes"] = sizeMatch.Groups[1].Value;
+                                    }
+
+                                    // 5. 处理粘包数据 (UnhandledData)
+                                    // 计算 XML 部分的字节长度
+                                    int xmlByteCount = Encoding.UTF8.GetByteCount(xmlContent);
+                                    
+                                    if (ms.Length > xmlByteCount)
+                                    {
+                                        int extraLen = (int)(ms.Length - xmlByteCount);
+                                        response.UnhandledData = new byte[extraLen];
+                                        // 从 MemoryStream 中提取剩余字节
+                                        byte[] allBytes = ms.ToArray();
+                                        Array.Copy(allBytes, xmlByteCount, response.UnhandledData, 0, extraLen);
+                                    }
+
+                                    return response;
+                                }
+                            }
                         }
                     }
                 }
+                catch (Exception ex)
+                {
+                    _logger?.Invoke($"WaitForResponse 异常: {ex.Message}");
+                }
             }
-            catch (Exception ex)
-            {
-                _logger?.Invoke($"WaitForResponse Error: {ex.Message}");
-            }
-            
             return null;
         }
 
-        private void ParseXmlContent(string xml, QCResponse response)
+        private void ParseXmlLogs(string xml, QCResponse response)
         {
-            // 简单的正则匹配，比加载整个 XML Document 快且容错率高
-            var logMatches = Regex.Matches(xml, "log value=\"([^\"]+)\"");
-            foreach (Match m in logMatches)
+            var matches = Regex.Matches(xml, "log value=\"([^\"]+)\"");
+            foreach (Match m in matches)
             {
                 string log = m.Groups[1].Value;
-                response.Logs.Add(log);
-                _logger?.Invoke($"Device Log: {log}");
-            }
-
-            var respMatch = Regex.Match(xml, "<response value=\"([^\"]+)\"");
-            if (respMatch.Success)
-            {
-                response.Response = respMatch.Groups[1].Value;
-                
-                // 提取其他属性
-                var rawTag = respMatch.Value; // 这只匹配到开头
-                // 需要在整个 XML 里找 response 标签的所有属性
-                // 偷懒做法：再匹配一次所有属性
-                var props = Regex.Matches(xml, "(\\w+)=\"([^\"]+)\"");
-                foreach (Match p in props)
+                if (!response.Logs.Contains(log))
                 {
-                    string key = p.Groups[1].Value;
-                    string val = p.Groups[2].Value;
-                    if (key != "value" && key != "log") 
-                        response.Properties[key] = val;
+                    response.Logs.Add(log);
+                    _logger?.Invoke($"Device Log: {log}");
                 }
             }
         }
