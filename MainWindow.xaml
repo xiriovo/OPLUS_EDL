@@ -1,0 +1,554 @@
+﻿<Window x:Class="OPLUS_EDL.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:OPLUS_EDL"
+        mc:Ignorable="d"
+        Title="OPPO EDL Flash Tool v1.1" Height="768" Width="1024"
+        WindowStartupLocation="CenterScreen"
+        Background="Transparent" AllowsTransparency="True" WindowStyle="None"
+        FontFamily="Microsoft YaHei UI">
+
+    <Window.Resources>
+        <!-- 颜色资源 -->
+        <SolidColorBrush x:Key="TextDark" Color="#333333"/>
+        <SolidColorBrush x:Key="TextLight" Color="#666666"/>
+        <SolidColorBrush x:Key="GlassBackground" Color="#CCFFFFFF"/>
+        <SolidColorBrush x:Key="BorderColor" Color="#33FFFFFF"/>
+        
+        <!-- 按钮颜色 -->
+        <LinearGradientBrush x:Key="BtnRed" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Color="#FF6B6B" Offset="0"/>
+            <GradientStop Color="#EE5253" Offset="1"/>
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="BtnPurple" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Color="#A29BFE" Offset="0"/>
+            <GradientStop Color="#6C5CE7" Offset="1"/>
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="BtnBlue" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Color="#48DBFB" Offset="0"/>
+            <GradientStop Color="#0ABDE3" Offset="1"/>
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="BtnGreen" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Color="#55EFC4" Offset="0"/>
+            <GradientStop Color="#00B894" Offset="1"/>
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="BtnCyan" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Color="#81ECEC" Offset="0"/>
+            <GradientStop Color="#00CEC9" Offset="1"/>
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="BtnOrange" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Color="#FAB1A0" Offset="0"/>
+            <GradientStop Color="#E17055" Offset="1"/>
+        </LinearGradientBrush>
+
+        <!-- 玻璃面板样式 -->
+        <Style x:Key="GlassPanel" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource GlassBackground}"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="BorderBrush" Value="White"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="15"/>
+        </Style>
+
+        <!-- 文本框样式 -->
+        <Style TargetType="TextBox">
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="5,0"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#E0E0E0"/>
+            <Setter Property="Background" Value="#80FFFFFF"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}" 
+                                BorderThickness="{TemplateBinding BorderThickness}" 
+                                CornerRadius="4">
+                            <ScrollViewer x:Name="PART_ContentHost"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 按钮基础样式 -->
+        <Style TargetType="Button" x:Key="BaseButton">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="6">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Opacity" Value="0.9"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Opacity" Value="0.8"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 选择按钮样式 -->
+        <Style x:Key="SelectButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
+            <Setter Property="Background" Value="#0984E3"/>
+            <Setter Property="Width" Value="60"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Margin" Value="5,0,0,0"/>
+        </Style>
+
+        <!-- 列表样式 -->
+        <Style TargetType="ListView">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+        
+        <Style TargetType="ListViewItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListViewItem">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderThickness="0,0,0,1" BorderBrush="#10000000">
+                            <GridViewRowPresenter VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#200984E3"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#400984E3"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 进度条样式 -->
+        <Style TargetType="ProgressBar">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Grid x:Name="TemplateRoot">
+                            <Border Background="{TemplateBinding Background}" CornerRadius="5" BorderThickness="0"/>
+                            <Border x:Name="PART_Track" />
+                            <Border x:Name="PART_Indicator" HorizontalAlignment="Left" CornerRadius="5">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                        <GradientStop Color="#74B9FF" Offset="0"/>
+                                        <GradientStop Color="#0984E3" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                            </Border>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- TabItem 样式 -->
+        <Style TargetType="TabItem">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border Name="Border" BorderThickness="0" CornerRadius="5,5,0,0" Margin="2,0">
+                            <ContentPresenter x:Name="ContentSite"
+                                            VerticalAlignment="Center"
+                                            HorizontalAlignment="Center"
+                                            ContentSource="Header"
+                                            Margin="10,5"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="#80FFFFFF" />
+                                <Setter Property="Foreground" Value="#0984E3" />
+                                <Setter Property="FontWeight" Value="Bold" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="False">
+                                <Setter TargetName="Border" Property="Background" Value="Transparent" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+    </Window.Resources>
+
+    <Border CornerRadius="12" BorderThickness="1" BorderBrush="#40FFFFFF">
+        <Border.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#74B9FF" Offset="0"/>
+                <GradientStop Color="#A29BFE" Offset="1"/>
+            </LinearGradientBrush>
+        </Border.Background>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="40"/> <!-- 标题栏 -->
+                <RowDefinition Height="60"/> <!-- 状态栏 -->
+                <RowDefinition Height="*"/>  <!-- 主内容 -->
+            </Grid.RowDefinitions>
+
+            <!-- 标题栏 -->
+            <Grid Grid.Row="0" Background="Transparent" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="15,0,0,0">
+                    <Path Data="M12,4A2,2 0 0,0 10,6A2,2 0 0,0 12,8A2,2 0 0,0 14,6A2,2 0 0,0 12,4M7,10V12H9V10H7M11,10V12H13V10H11M15,10V12H17V10H15M7,14V16H9V14H7M11,14V16H13V14H11M15,14V16H17V14H15M7,18V20H9V18H7M11,18V20H13V18H11M15,18V20H17V18H15Z" Fill="White" Width="16" Height="16" Margin="0,0,8,0"/>
+                    <TextBlock Text="OPPO EDL Flash Tool v1.1" Foreground="White" FontWeight="Bold" FontSize="14"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,10,0">
+                    <Button x:Name="MinimizeBtn" Width="40" Height="30" Background="Transparent" BorderThickness="0" Click="MinimizeButton_Click">
+                        <Path Data="M0,5 L10,5" Stroke="White" StrokeThickness="2"/>
+                    </Button>
+                    <Button x:Name="CloseBtn" Width="40" Height="30" Background="Transparent" BorderThickness="0" Click="CloseButton_Click">
+                        <Path Data="M0,0 L10,10 M0,10 L10,0" Stroke="White" StrokeThickness="2"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- 状态栏 -->
+            <Border Grid.Row="1" Margin="15,0,15,10" Style="{StaticResource GlassPanel}" Padding="10">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Path Data="M17,12V3A1,1 0 0,0 16,2H3A1,1 0 0,0 2,3V17L6,21H16A1,1 0 0,0 17,20V12M21,15.73V14.27C21.74,14.1 22.14,13.26 21.76,12.61L21.03,11.35C20.65,10.69 19.78,10.5 19.17,10.96L18.05,11.8C17.5,11.5 16.91,11.29 16.29,11.18V9.73C16.29,8.97 15.67,8.35 14.91,8.35H13.45C12.69,8.35 12.07,8.97 12.07,9.73V11.18C11.45,11.29 10.86,11.5 10.31,11.8L9.19,10.96C8.58,10.5 7.71,10.69 7.33,11.35L6.6,12.61C6.22,13.26 6.62,14.1 7.36,14.27V15.73C6.62,15.9 6.22,16.74 6.6,17.39L7.33,18.65C7.71,19.31 8.58,19.5 9.19,19.04L10.31,18.2C10.86,18.5 11.45,18.71 12.07,18.82V20.27C12.07,21.03 12.69,21.65 13.45,21.65H14.91C15.67,21.65 16.29,21.03 16.29,20.27V18.82C16.91,18.71 17.5,18.5 18.05,18.2L19.17,19.04C19.78,19.5 20.65,19.31 21.03,18.65L21.76,17.39C22.14,16.74 21.74,15.9 21,15.73M14.18,16.5A2.5,2.5 0 1,1 16.68,14A2.5,2.5 0 0,1 14.18,16.5Z" Fill="#2ECC71" Width="20" Height="20" Margin="0,0,10,0"/>
+                    
+                    <ComboBox x:Name="PortComboBox" Grid.Column="1" Width="200" Height="30" VerticalContentAlignment="Center" Background="Transparent" BorderThickness="0" Foreground="#333333" FontSize="14" FontWeight="Bold"/>
+                    
+                    <ProgressBar x:Name="QCProgressBar" Grid.Column="2" Margin="10,0" Height="10" Background="#40FFFFFF" BorderThickness="0" Foreground="#0984E3"/>
+                    
+                    <TextBlock x:Name="SpeedText" Grid.Column="3" Text="" VerticalAlignment="Center" Margin="0,0,10,0" Foreground="#666666"/>
+                    
+                    <Button x:Name="RefreshPortsButton" Grid.Column="4" Content="刷新设备" Style="{StaticResource BaseButton}" Background="#0984E3" Padding="15,0" Height="30" Click="RefreshPortsButton_Click"/>
+                </Grid>
+            </Border>
+
+            <!-- 主内容区域 -->
+            <TabControl Grid.Row="2" Margin="15,0,15,15" Background="Transparent" BorderThickness="0">
+                <TabItem Header="刷机工具">
+                    <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*"/>
+                    <ColumnDefinition Width="1*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- 左侧面板 -->
+                <Grid Grid.Column="0" Margin="0,0,15,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- 文件选择区域 -->
+                    <Border Grid.Row="0" Style="{StaticResource GlassPanel}" Margin="0,0,0,15">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <Rectangle Width="4" Height="16" Fill="#F1C40F" Margin="0,0,8,0" RadiusX="2" RadiusY="2"/>
+                                <TextBlock Text="引导和刷机包文件" FontWeight="Bold" Foreground="#E67E22" FontSize="14"/>
+                            </StackPanel>
+                            
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="80"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="引导文件:" VerticalAlignment="Center" Foreground="{StaticResource TextDark}"/>
+                                <TextBox x:Name="LoaderTextBox" Grid.Column="1"/>
+                                <Button x:Name="LoaderBrowserBtn" Grid.Column="2" Content="选择" Style="{StaticResource SelectButton}" Click="LoaderBrowserBtn_Click"/>
+                            </Grid>
+
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="80"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Digest文件:" VerticalAlignment="Center" Foreground="{StaticResource TextDark}"/>
+                                <TextBox x:Name="DigestTextBox" Grid.Column="1"/>
+                                <Button x:Name="DigestBrowserBtn" Grid.Column="2" Content="选择" Style="{StaticResource SelectButton}" Click="DigestBrowserBtn_Click"/>
+                            </Grid>
+
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="80"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Sign文件:" VerticalAlignment="Center" Foreground="{StaticResource TextDark}"/>
+                                <TextBox x:Name="SignatureTextBox" Grid.Column="1"/>
+                                <Button x:Name="SignatureBrowserBtn" Grid.Column="2" Content="选择" Style="{StaticResource SelectButton}" Click="SignatureBrowserBtn_Click"/>
+                            </Grid>
+
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="80"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Raw XML:" VerticalAlignment="Center" Foreground="{StaticResource TextDark}"/>
+                                <TextBox x:Name="FlashPackText" Grid.Column="1"/>
+                                <Button x:Name="FlashPackBroswerBtn" Grid.Column="2" Content="选择" Style="{StaticResource SelectButton}" Click="FlashPackBroswerBtn_Click"/>
+                            </Grid>
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="80"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Patch XML:" VerticalAlignment="Center" Foreground="{StaticResource TextDark}"/>
+                                <TextBox x:Name="PatchText" Grid.Column="1"/>
+                                <Button x:Name="PatchBrowserBtn" Grid.Column="2" Content="选择" Style="{StaticResource SelectButton}" Click="PatchBrowserBtn_Click"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 分区列表区域 -->
+                    <Border Grid.Row="1" Style="{StaticResource GlassPanel}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <Grid Grid.Row="0" Margin="0,0,0,10">
+                                <StackPanel Orientation="Horizontal">
+                                    <Rectangle Width="4" Height="16" Fill="#2ECC71" Margin="0,0,8,0" RadiusX="2" RadiusY="2"/>
+                                    <TextBlock Text="设备分区表" FontWeight="Bold" Foreground="#2ECC71" FontSize="14"/>
+                                </StackPanel>
+                                <CheckBox x:Name="SelectCB" Content="全选" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="SelectCB_CheckedChanged" Unchecked="SelectCB_CheckedChanged"/>
+                            </Grid>
+
+                            <Border Grid.Row="1" Background="#80FFFFFF" CornerRadius="15" Height="30" Margin="0,0,0,10" BorderThickness="1" BorderBrush="#E0E0E0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="30"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Path Data="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z" Fill="#666666" Width="16" Height="16"/>
+                                    <TextBox x:Name="SearchPartBox" Grid.Column="1" BorderThickness="0" Background="Transparent" VerticalContentAlignment="Center" TextChanged="SearchPartBox_TextChanged"/>
+                                </Grid>
+                            </Border>
+
+                            <ListView x:Name="PartList" Grid.Row="2" MouseDoubleClick="PartList_MouseDoubleClick" AlternationCount="2" SelectionMode="Extended" 
+                                      ScrollViewer.VerticalScrollBarVisibility="Visible"
+                                      ScrollViewer.CanContentScroll="True"
+                                      VirtualizingStackPanel.IsVirtualizing="True"
+                                      VirtualizingStackPanel.VirtualizationMode="Recycling">
+                                <ListView.ItemContainerStyle>
+                                    <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Type ListViewItem}}">
+                                        <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+                                    </Style>
+                                </ListView.ItemContainerStyle>
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Width="40">
+                                            <GridViewColumn.Header>
+                                                <CheckBox IsChecked="{Binding ElementName=SelectCB, Path=IsChecked, Mode=TwoWay}"/>
+                                            </GridViewColumn.Header>
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                        <GridViewColumn Header="LUN" DisplayMemberBinding="{Binding Lun}" Width="50"/>
+                                        <GridViewColumn Header="分区名称" DisplayMemberBinding="{Binding Label}" Width="120"/>
+                                        <GridViewColumn Header="大小" DisplayMemberBinding="{Binding FormattedSize}" Width="80"/>
+                                        <GridViewColumn Header="起始扇区" DisplayMemberBinding="{Binding StartSector}" Width="100"/>
+                                        <GridViewColumn Header="分区地址" DisplayMemberBinding="{Binding StartAddress}" Width="100"/>
+                                        <GridViewColumn Header="扇区数" DisplayMemberBinding="{Binding NumSectors}" Width="80"/>
+                                        <GridViewColumn Header="镜像文件" DisplayMemberBinding="{Binding Filename}" Width="150"/>
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <!-- 右侧面板 -->
+                <Grid Grid.Column="1">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- 重启区域 -->
+                    <Border Grid.Row="0" Style="{StaticResource GlassPanel}" Margin="0,0,0,10" Padding="10">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                                <Rectangle Width="4" Height="16" Fill="#0984E3" Margin="0,0,8,0" RadiusX="2" RadiusY="2"/>
+                                <TextBlock Text="重启到" FontWeight="Bold" Foreground="#0984E3" FontSize="14"/>
+                            </StackPanel>
+                            <UniformGrid Columns="2" Rows="2" Height="60">
+                                <Button x:Name="RebootSystemBtn" Content="重启到系统" Style="{StaticResource BaseButton}" Background="{StaticResource BtnRed}" Margin="0,0,3,3" Click="RebootSystemBtn_Click"/>
+                                <Button x:Name="RebootRecBtn" Content="重启到Recovery" Style="{StaticResource BaseButton}" Background="{StaticResource BtnPurple}" Margin="3,0,0,3" Click="RebootRecBtn_Click"/>
+                                <Button x:Name="RebootBootloaderBtn" Content="重启到Fastboot" Style="{StaticResource BaseButton}" Background="{StaticResource BtnPurple}" Margin="0,3,3,0" Click="RebootBootloaderBtn_Click"/>
+                                <Button x:Name="RebootEdlBtn" Content="重启到EDL模式" Style="{StaticResource BaseButton}" Background="{StaticResource BtnRed}" Margin="3,3,0,0" Click="RebootEdlBtn_Click"/>
+                            </UniformGrid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 功能操作区域 -->
+                    <Border Grid.Row="1" Style="{StaticResource GlassPanel}" Margin="0,0,0,10" Padding="10">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                                <Rectangle Width="4" Height="16" Fill="#74B9FF" Margin="0,0,8,0" RadiusX="2" RadiusY="2"/>
+                                <TextBlock Text="功能操作" FontWeight="Bold" Foreground="#74B9FF" FontSize="14"/>
+                            </StackPanel>
+                            
+                            <!-- 优化后的选项区域 -->
+                            <Border Background="#30FFFFFF" CornerRadius="6" Padding="8" Margin="0,0,0,8">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    
+                                    <!-- 存储类型 -->
+                                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,5" HorizontalAlignment="Center">
+                                        <TextBlock Text="存储类型:" VerticalAlignment="Center" Margin="0,0,10,0" Foreground="{StaticResource TextDark}" FontSize="12"/>
+                                        <RadioButton Content="UFS" IsChecked="True" Margin="0,0,15,0" VerticalContentAlignment="Center" Foreground="{StaticResource TextDark}"/>
+                                        <RadioButton Content="EMMC" VerticalContentAlignment="Center" Foreground="{StaticResource TextDark}"/>
+                                    </StackPanel>
+
+                                    <!-- 选项复选框 -->
+                                    <UniformGrid Grid.Row="1" Columns="2">
+                                        <CheckBox x:Name="SendLoaderCB" Content="不发引导" IsChecked="False" Margin="0,2" Foreground="{StaticResource TextDark}"/>
+                                        <CheckBox x:Name="UseOfficialLineCB" Content="生成XML" Margin="0,2" Foreground="{StaticResource TextDark}"/>
+                                        <CheckBox x:Name="SkipSafeCB" Content="保护LUN5" IsChecked="True" Margin="0,2" Foreground="{StaticResource TextDark}"/>
+                                        <CheckBox x:Name="SkipDataCB" Content="保留数据" IsChecked="True" Margin="0,2" Foreground="{StaticResource TextDark}"/>
+                                        <CheckBox x:Name="OplusTestModeCB" Content="Oplus验证" IsChecked="False" Margin="0,2" Foreground="{StaticResource TextDark}"/>
+                                    </UniformGrid>
+                                </Grid>
+                            </Border>
+
+                            <Button x:Name="StopBtn" Content="停止操作" Style="{StaticResource BaseButton}" Background="{StaticResource BtnRed}" Margin="0,0,0,8" Height="28" IsEnabled="False"/>
+
+                            <UniformGrid Columns="2" Rows="4" Height="120">
+                                <Button x:Name="DeviceInfoBtn" Content="发送引导" Style="{StaticResource BaseButton}" Background="{StaticResource BtnBlue}" Margin="0,0,3,3" Click="SendAuthBtn_Click">
+                                    <Button.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="读取设备信息" Click="DeviceInfoBtn_Click"/>
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                </Button>
+                                <Button x:Name="ReadGPTBtn" Content="读取分区表" Style="{StaticResource BaseButton}" Background="{StaticResource BtnGreen}" Margin="3,0,0,3" Click="ReadGPTBtn_Click"/>
+                                <Button x:Name="ReadPartBtn" Content="提取选中分区" Style="{StaticResource BaseButton}" Background="{StaticResource BtnCyan}" Margin="0,3,3,3" Click="ReadPartBtn_Click"/>
+                                <Button x:Name="WritePartBtn" Content="写入选中分区" Style="{StaticResource BaseButton}" Background="{StaticResource BtnOrange}" Margin="3,3,0,3" Click="WritePartBtn_Click"/>
+                                <Button x:Name="ErasePartBtn" Content="擦除选中分区" Style="{StaticResource BaseButton}" Background="{StaticResource BtnOrange}" Margin="0,3,3,3" Click="ErasePartBtn_Click"/>
+                                <Button x:Name="WipeDataBtn" Content="清除数据" Style="{StaticResource BaseButton}" Background="{StaticResource BtnRed}" Margin="3,3,0,3" Click="WipeDataBtn_Click">
+                                    <Button.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="清除用户数据 (Userdata)" Tag="EraseUserdata" Click="WipeMenuItem_Click"/>
+                                            <MenuItem Header="清除 FRP/Misc" Tag="EraseFrp" Click="WipeMenuItem_Click"/>
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                </Button>
+                                <Button x:Name="ResetBtn" Content="重置设备" Style="{StaticResource BaseButton}" Background="{StaticResource BtnPurple}" Margin="0,3,3,0" Click="ResetBtn_Click">
+                                    <Button.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="重启到系统" Tag="System" Click="RebootMenuItem_Click"/>
+                                            <MenuItem Header="重启到 Recovery" Tag="Recovery" Click="RebootMenuItem_Click"/>
+                                            <MenuItem Header="重启到 Bootloader" Tag="Bootloader" Click="RebootMenuItem_Click"/>
+                                            <MenuItem Header="重启到 EDL" Tag="EDL" Click="RebootMenuItem_Click"/>
+                                            <MenuItem Header="关机" Tag="PowerOff" Click="RebootMenuItem_Click"/>
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                </Button>
+                                <Button x:Name="SwitchSlotBtn" Content="切换槽位" Style="{StaticResource BaseButton}" Background="{StaticResource BtnBlue}" Margin="3,3,0,0" Click="SwitchSlotBtn_Click">
+                                    <Button.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="切换到 Slot A" Tag="A" Click="SlotMenuItem_Click"/>
+                                            <MenuItem Header="切换到 Slot B" Tag="B" Click="SlotMenuItem_Click"/>
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                </Button>
+                            </UniformGrid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 日志区域 -->
+                    <Border Grid.Row="2" Style="{StaticResource GlassPanel}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0" Margin="0,0,0,5">
+                                <StackPanel Orientation="Horizontal">
+                                    <Rectangle Width="4" Height="16" Fill="#A29BFE" Margin="0,0,8,0" RadiusX="2" RadiusY="2"/>
+                                    <TextBlock Text="操作日志" FontWeight="Bold" Foreground="#A29BFE" FontSize="14"/>
+                                </StackPanel>
+                                <Button HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" Click="ClearLog_Click">
+                                    <Path Data="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z" Fill="#666666" Width="14" Height="14"/>
+                                </Button>
+                            </Grid>
+                            <Border Grid.Row="1" Background="#40000000" CornerRadius="6" Padding="5">
+                                <TextBox x:Name="LogText" Background="Transparent" BorderThickness="0" IsReadOnly="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" VerticalContentAlignment="Top" FontFamily="Consolas" FontSize="12" Foreground="White" Height="Auto" VerticalAlignment="Stretch"/>
+                            </Border>
+                        </Grid>
+                    </Border>
+                </Grid>
+                    </Grid>
+                </TabItem>
+                
+                <TabItem Header="高级工具">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1*"/>
+                            <ColumnDefinition Width="1*"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <!-- Diag Tools -->
+                        <Border Grid.Column="0" Style="{StaticResource GlassPanel}" Margin="0,0,10,0">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <Rectangle Width="4" Height="16" Fill="#E67E22" Margin="0,0,8,0" RadiusX="2" RadiusY="2"/>
+                                    <TextBlock Text="诊断模式 (Diag)" FontWeight="Bold" Foreground="#E67E22" FontSize="14"/>
+                                </StackPanel>
+                                <Button x:Name="DiagConnectBtn" Content="连接 Diag" Style="{StaticResource BaseButton}" Background="{StaticResource BtnBlue}" Margin="0,0,0,5" Height="30" Click="DiagConnectBtn_Click"/>
+                                <Button x:Name="DiagReadNVBtn" Content="读取 NV Item" Style="{StaticResource BaseButton}" Background="{StaticResource BtnGreen}" Margin="0,0,0,5" Height="30" Click="DiagReadNVBtn_Click"/>
+                                <Button x:Name="DiagWriteNVBtn" Content="写入 NV Item" Style="{StaticResource BaseButton}" Background="{StaticResource BtnOrange}" Margin="0,0,0,5" Height="30" Click="DiagWriteNVBtn_Click"/>
+                                <Button x:Name="DiagSwitchEDLBtn" Content="切换到 EDL" Style="{StaticResource BaseButton}" Background="{StaticResource BtnRed}" Margin="0,0,0,5" Height="30" Click="DiagSwitchEDLBtn_Click"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Streaming Tools -->
+                        <Border Grid.Column="1" Style="{StaticResource GlassPanel}" Margin="10,0,0,0">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <Rectangle Width="4" Height="16" Fill="#9B59B6" Margin="0,0,8,0" RadiusX="2" RadiusY="2"/>
+                                    <TextBlock Text="流式传输 (Streaming)" FontWeight="Bold" Foreground="#9B59B6" FontSize="14"/>
+                                </StackPanel>
+                                <Button x:Name="StreamConnectBtn" Content="连接 Streaming" Style="{StaticResource BaseButton}" Background="{StaticResource BtnBlue}" Margin="0,0,0,5" Height="30" Click="StreamConnectBtn_Click"/>
+                                <Button x:Name="StreamReadTableBtn" Content="读取分区表" Style="{StaticResource BaseButton}" Background="{StaticResource BtnGreen}" Margin="0,0,0,5" Height="30" Click="StreamReadTableBtn_Click"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </TabItem>
+            </TabControl>
+        </Grid>
+    </Border>
+</Window>
