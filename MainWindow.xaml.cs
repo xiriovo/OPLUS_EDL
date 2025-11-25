@@ -37,8 +37,7 @@ namespace OPLUS_EDL
 
         private DiagClient _diagClient;
         private StreamingClient _streamingClient;
-        // private NativeMethods.LogCallback _logCallback; // Removed C++ Native Call
-
+        private ModelManager _modelManager;
 
         public MainWindow()
         {
@@ -55,18 +54,12 @@ namespace OPLUS_EDL
                 _logTimer.Tick += ProcessLogQueue;
                 _logTimer.Start();
 
-                // Initialize Native Logging
-                try
-                {
-                    // _logCallback = new NativeMethods.LogCallback(OnNativeLog);
-                    // NativeMethods.set_log_callback(_logCallback);
-                }
-                catch (Exception ex)
-                {
-                    System.Windows.MessageBox.Show($"加载原生库失败 (日志功能将受限): {ex.Message}", "警告", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
-                }
-
                 InitializePaths();
+                
+                // 初始化机型管理器
+                _modelManager = new ModelManager(_baseDir);
+                RefreshModels();
+
                 // Fire and forget initial refresh without countdown
                 _ = RefreshPortsAsync(false);
                 
@@ -86,6 +79,32 @@ namespace OPLUS_EDL
             {
                 System.Windows.MessageBox.Show($"启动失败: {ex.Message}\n\n{ex.StackTrace}", "错误", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
                 System.Windows.Application.Current.Shutdown();
+            }
+        }
+
+        private void RefreshModels()
+        {
+            _modelManager.ScanModels();
+            ModelComboBox.ItemsSource = null;
+            ModelComboBox.ItemsSource = _modelManager.Models;
+            if (_modelManager.Models.Count > 0)
+            {
+                ModelComboBox.SelectedIndex = 0;
+            }
+        }
+
+        private void RefreshModelsBtn_Click(object sender, RoutedEventArgs e)
+        {
+            RefreshModels();
+        }
+
+        private void ModelComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (ModelComboBox.SelectedItem is ModelConfig config)
+            {
+                if (!string.IsNullOrEmpty(config.LoaderPath)) LoaderTextBox.Text = config.LoaderPath;
+                if (!string.IsNullOrEmpty(config.AuthPath)) SignatureTextBox.Text = config.AuthPath;
+                Log($"已加载机型配置: {config.Name}");
             }
         }
 
@@ -876,39 +895,31 @@ namespace OPLUS_EDL
             }
         }
 
+        // ---------------------------------------------------------
+        // 在 MainWindow 类中，替换原有的 PerformOperation 方法
+        // ---------------------------------------------------------
+
         private async Task PerformOperation(string operation, string? customOutputDir = null)
         {
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
 
-            UpdateProgress(0, "等待端口...");
+            // 初始化 UI
+            UpdateProgress(0, "准备就绪");
             string? port = await WaitForPortAsync();
             if (string.IsNullOrEmpty(port)) return;
 
             var selectedParts = Partitions.Where(p => p.IsSelected).ToList();
             if (selectedParts.Count == 0) { Log("未选择分区。"); return; }
 
-            // 1. Send Loader if checked
+            // 1. 发送引导 (Send Loader)
             if (SendLoaderCB.IsChecked == true)
             {
-                UpdateProgress(5, "正在发送引导...");
+                UpdateProgress(0, "正在握手 (Sahara)...");
                 bool success = await SendLoader(port, token);
                 if (!success) return;
-                UpdateProgress(15, "引导发送完成");
-            }
-            else
-            {
-                UpdateProgress(15, "跳过引导");
             }
 
-            // 2. Generate XML (for Read/Write temp usage) - Removed
-            // string tempXml = Path.Combine(_binDir, "temp_action.xml");
-            // if (operation != "Erase")
-            // {
-            //    GenerateXml(selectedParts, tempXml, operation);
-            // }
-
-            // 3. Execute
             await Task.Run(() =>
             {
                 try
@@ -917,257 +928,196 @@ namespace OPLUS_EDL
                     {
                         if (token.IsCancellationRequested) return;
 
-                        UpdateProgress(20, "正在配置设备...");
-                        Log("正在配置...");
+                        Dispatcher.Invoke(() => SpeedText.Text = "正在配置 Firehose...");
                         RunConfigure(client);
+
+                        // 如果是读取，刷新分区表以获取精确地址
+                        List<PartitionInfo>? freshPartitions = null;
+                        if (operation == "Read" || operation == "Erase")
+                        {
+                            freshPartitions = ReadGpt(client, "ufs", token);
+                        }
+
+                        // -------------------------------------------------
+                        // 进度条核心优化逻辑
+                        // -------------------------------------------------
                         
-                        // Ensure defaults if configure failed or returned partial info
-                        if (string.IsNullOrEmpty(_detectedMemoryName)) _detectedMemoryName = "ufs";
-                        if (_detectedSectorSize == 0) _detectedSectorSize = 4096;
-
-                        // Refresh Partition Table to ensure correct addresses
-                        UpdateProgress(25, "正在刷新分区表...");
-                        Log("正在刷新分区表以获取最新地址...");
-                        var freshPartitions = ReadGpt(client, _detectedMemoryName, token);
-                        
-                        if (freshPartitions == null || freshPartitions.Count == 0)
+                        // 1. 计算总工作量 (字节)
+                        long totalBytesJob = 0;
+                        foreach (var part in selectedParts)
                         {
-                            Log("警告: 刷新分区表失败，将尝试使用现有信息。");
-                        }
-                        else
-                        {
-                            Log($"分区表刷新成功，找到 {freshPartitions.Count} 个分区。");
-                        }
-
-                    UpdateProgress(30, "准备开始...");
-
-                    long totalSizeKB = selectedParts.Sum(p => p.SizeInKB);
-                    long lastProcessedKB = 0;
-                    DateTime lastTime = DateTime.Now;
-                    
-                    Action<string> progressHandler = (line) =>
-                    {
-                        // Parse percentage: "12.50 %"
-                        if (line.Contains("%"))
-                        {
-                            var match = System.Text.RegularExpressions.Regex.Match(line, @"(\d+\.?\d*)\s*%");
-                            if (match.Success && double.TryParse(match.Groups[1].Value, out double percent))
+                            // 尝试获取精确大小
+                            long size = part.SizeInKB * 1024;
+                            
+                            // 如果是写操作，以文件大小为准
+                            if (operation == "Write" && File.Exists(part.Filename))
                             {
-                                Dispatcher.Invoke(() =>
-                                {
-                                    // Scale 0-100% to 30-100%
-                                    double scaledPercent = 30 + (percent * 0.7);
-                                    QCProgressBar.Value = scaledPercent;
-                                    
-                                    // Calculate Speed
-                                    DateTime now = DateTime.Now;
-                                    double elapsedSeconds = (now - lastTime).TotalSeconds;
-                                    if (elapsedSeconds >= 0.5) // Update speed every 0.5s
-                                    {
-                                        long currentProcessedKB = (long)(totalSizeKB * (percent / 100.0));
-                                        long deltaKB = currentProcessedKB - lastProcessedKB;
-                                        double speedKBps = deltaKB / elapsedSeconds;
-                                        
-                                        string speedStr;
-                                        if (speedKBps > 1024 * 1024) speedStr = $"{speedKBps / (1024 * 1024):F2} GB/s";
-                                        else if (speedKBps > 1024) speedStr = $"{speedKBps / 1024:F2} MB/s";
-                                        else speedStr = $"{speedKBps:F2} KB/s";
-                                        
-                                        SpeedText.Text = speedStr;
-                                        
-                                        lastProcessedKB = currentProcessedKB;
-                                        lastTime = now;
-                                    }
-                                });
+                                size = new FileInfo(part.Filename).Length;
                             }
-                        }
-                    };
-
-                    // Reuse existing client
-                    {
-                        if (operation == "Read")
-                        {
-                            string outputDir;
-                            if (!string.IsNullOrEmpty(customOutputDir))
+                            // 如果是读/擦除，且有新分区表，用新分区表的大小
+                            else if (freshPartitions != null)
                             {
-                                outputDir = customOutputDir;
-                            }
-                            else
-                            {
-                                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                                outputDir = Path.Combine(_baseDir, $"readback_{timestamp}");
-                            }
-                            Directory.CreateDirectory(outputDir);
-                            Log($"正在读取到 {outputDir}...");
-
-                            foreach (var part in selectedParts)
-                            {
-                                if (token.IsCancellationRequested)
-                                {
-                                    Log("操作已取消。");
-                                    break;
-                                }
-
-                                // Use fresh info if available
-                                var targetPart = part;
-                                if (freshPartitions != null)
-                                {
-                                    var fresh = freshPartitions.FirstOrDefault(p => p.Label == part.Label && p.Lun == part.Lun);
-                                    if (fresh != null) 
-                                    {
-                                        targetPart = fresh;
-                                        // Log($"使用最新地址: {targetPart.Label} @ {targetPart.StartSector}");
-                                    }
-                                    else
-                                    {
-                                        Log($"警告: 新分区表中未找到 {part.Label}，使用旧地址。");
-                                    }
-                                }
-
-                                string outFile = Path.Combine(outputDir, targetPart.Label + ".bin");
-                                Log($"正在读取 {targetPart.Label} ({targetPart.Size} KB)...");
-                                
-                                using (var fs = new FileStream(outFile, FileMode.Create, FileAccess.Write))
-                                {
-                                    long start = long.Parse(targetPart.StartSector);
-                                    long num = long.Parse(targetPart.NumSectors);
-                                    
-                                    long fileLastBytes = 0;
-                                    DateTime fileLastTime = DateTime.Now;
-
-                                    bool success = client.ReadDataToStream(targetPart.Lun, start, num, fs, (current, total) => {
-                                         Dispatcher.Invoke(() => {
-                                            double percent = (double)current / total * 100.0;
-                                            QCProgressBar.Value = 30 + (percent * 0.7);
-                                            
-                                            DateTime now = DateTime.Now;
-                                            double elapsed = (now - fileLastTime).TotalSeconds;
-                                            if (elapsed >= 0.1)
-                                            {
-                                                double speed = (current - fileLastBytes) / elapsed;
-                                                SpeedText.Text = speed > 1048576 ? $"{speed/1048576:F2} MB/s" : $"{speed/1024:F2} KB/s";
-                                                fileLastBytes = current;
-                                                fileLastTime = now;
-                                            }
-                                         });
-                                    }, null, token, label: targetPart.Label, filename: targetPart.Label + ".bin");
-                                    
-                                    if (!success)
-                                    {
-                                        Log($"读取 {targetPart.Label} 失败");
-                                    }
-                                }
+                                var fresh = freshPartitions.FirstOrDefault(p => p.Label == part.Label && p.Lun == part.Lun);
+                                if (fresh != null) size = fresh.SizeInKB * 1024;
                             }
                             
-                            GenerateRawProgram(selectedParts, Path.Combine(outputDir, "rawprogram.xml"));
-                            Log($"已生成 rawprogram.xml 到 {outputDir}");
+                            totalBytesJob += size;
                         }
-                        else if (operation == "Write")
+
+                        // 2. 定义进度状态变量
+                        long bytesProcessedGlobal = 0; // 已完成文件的总字节
+                        long bytesProcessedCurrentFile = 0; // 当前文件已处理字节
+                        
+                        // 速度计算相关
+                        DateTime startTime = DateTime.Now;
+                        DateTime lastUpdateTime = DateTime.Now;
+                        long lastBytesSample = 0;
+                        
+                        // 定义一个高频调用的本地函数，但在内部限流刷新 UI
+                        void ReportProgress(long currentFileBytes, long totalFileBytes)
                         {
-                            foreach (var part in selectedParts)
+                            bytesProcessedCurrentFile = currentFileBytes;
+                            long totalProcessed = bytesProcessedGlobal + bytesProcessedCurrentFile;
+
+                            DateTime now = DateTime.Now;
+                            double timeDelta = (now - lastUpdateTime).TotalSeconds;
+
+                            // 限流：每 50ms 刷新一次 UI，或者是最后一次更新
+                            if (timeDelta >= 0.05 || totalProcessed == totalBytesJob)
                             {
-                                if (token.IsCancellationRequested)
-                                {
-                                    Log("操作已取消。");
-                                    break;
-                                }
+                                // 计算百分比
+                                double percent = totalBytesJob > 0 ? (double)totalProcessed / totalBytesJob * 100.0 : 0;
+                                if (percent > 100) percent = 100;
 
-                                // Use fresh info if available
-                                var targetPart = part;
-                                if (freshPartitions != null)
-                                {
-                                    var fresh = freshPartitions.FirstOrDefault(p => p.Label == part.Label && p.Lun == part.Lun);
-                                    if (fresh != null) targetPart = fresh;
-                                }
+                                // 计算瞬时速度 (基于本次采样间隔)
+                                double bytesDelta = totalProcessed - lastBytesSample;
+                                double speedBps = bytesDelta / timeDelta;
+                                string speedStr = FormatSpeed(speedBps);
 
-                                string file = targetPart.Filename;
-                                if (string.IsNullOrEmpty(file) || !File.Exists(file)) 
+                                // 切换到 UI 线程更新
+                                Dispatcher.Invoke(() =>
                                 {
-                                    Log($"跳过 {targetPart.Label}: 未指定文件");
-                                    continue;
+                                    QCProgressBar.Value = percent;
+                                    // 显示格式: "45.2 %  |  12.5 MB/s"
+                                    SpeedText.Text = $"{percent:F1} %  |  {speedStr}";
+                                });
+
+                                // 更新采样点
+                                lastUpdateTime = now;
+                                lastBytesSample = totalProcessed;
+                            }
+                        }
+
+                        // 3. 开始循环执行任务
+                        foreach (var part in selectedParts)
+                        {
+                            if (token.IsCancellationRequested) break;
+
+                            // 获取最新的分区信息 (地址/大小)
+                            var targetPart = part;
+                            if (freshPartitions != null)
+                            {
+                                var fresh = freshPartitions.FirstOrDefault(p => p.Label == part.Label && p.Lun == part.Lun);
+                                if (fresh != null) targetPart = fresh;
+                            }
+
+                            long startSector = long.Parse(targetPart.StartSector);
+                            
+                            // ------ [Read] 读取 ------
+                            if (operation == "Read")
+                            {
+                                string outputDir = string.IsNullOrEmpty(customOutputDir) 
+                                    ? Path.Combine(_baseDir, $"readback_{startTime:yyyyMMdd_HHmmss}") 
+                                    : customOutputDir;
+                                Directory.CreateDirectory(outputDir);
+                                
+                                string outFile = Path.Combine(outputDir, targetPart.Label + ".bin");
+                                long numSectors = long.Parse(targetPart.NumSectors);
+                                long byteSize = numSectors * client.SectorSize;
+
+                                Dispatcher.Invoke(() => Log($"正在读取 {targetPart.Label} ({FormatSize(byteSize)})..."));
+
+                                using (var fs = new FileStream(outFile, FileMode.Create, FileAccess.Write, FileShare.Read, 1024 * 1024)) // 1MB File Buffer
+                                {
+                                    bool res = client.ReadDataToStream(targetPart.Lun, startSector, numSectors, fs, ReportProgress, client.SectorSize, token);
+                                    if (!res) Log($"读取 {targetPart.Label} 失败");
                                 }
                                 
-                                Log($"正在写入 {targetPart.Label}...");
-                                using (var fs = new FileStream(file, FileMode.Open, FileAccess.Read))
-                                {
-                                    long start = long.Parse(targetPart.StartSector);
-                                    
-                                    long fileLastBytes = 0;
-                                    DateTime fileLastTime = DateTime.Now;
-
-                                    bool success = client.WriteDataFromStream(targetPart.Lun, start, fs, fs.Length, (current, total) => {
-                                         Dispatcher.Invoke(() => {
-                                            double percent = (double)current / total * 100.0;
-                                            QCProgressBar.Value = 30 + (percent * 0.7);
-                                            
-                                            DateTime now = DateTime.Now;
-                                            double elapsed = (now - fileLastTime).TotalSeconds;
-                                            if (elapsed >= 0.1)
-                                            {
-                                                double speed = (current - fileLastBytes) / elapsed;
-                                                SpeedText.Text = speed > 1048576 ? $"{speed/1048576:F2} MB/s" : $"{speed/1024:F2} KB/s";
-                                                fileLastBytes = current;
-                                                fileLastTime = now;
-                                            }
-                                         });
-                                    }, token, label: targetPart.Label, filename: targetPart.Label + ".bin");
-                                    
-                                    if (!success)
-                                    {
-                                        Log($"写入 {targetPart.Label} 失败");
-                                        return;
-                                    }
-                                }
+                                // 累加全局进度
+                                bytesProcessedGlobal += byteSize;
+                                // 重置当前文件进度，防止跳变
+                                bytesProcessedCurrentFile = 0; 
+                                // 强制刷新一次以确保进度条对齐
+                                ReportProgress(0, 0); 
+                                
+                                // 生成 rawprogram (仅一次或最后生成)
+                                if (part == selectedParts.Last())
+                                    GenerateRawProgram(selectedParts, Path.Combine(outputDir, "rawprogram.xml"));
                             }
-
-                            string patchFiles = "";
-                            Dispatcher.Invoke(() => patchFiles = PatchText.Text);
-                            if (!string.IsNullOrEmpty(patchFiles))
+                            // ------ [Write] 写入 ------
+                            else if (operation == "Write")
                             {
-                                foreach(var patchFile in patchFiles.Split(','))
+                                string file = targetPart.Filename;
+                                if (!File.Exists(file))
                                 {
-                                    if(File.Exists(patchFile))
-                                    {
-                                        Log($"正在应用补丁 {Path.GetFileName(patchFile)}...");
-                                        string xml = File.ReadAllText(patchFile);
-                                        client.SendRawXml(xml);
-                                    }
+                                    Log($"跳过 {targetPart.Label}: 文件不存在");
+                                    continue;
                                 }
+
+                                long fileSize = new FileInfo(file).Length;
+                                Dispatcher.Invoke(() => Log($"正在写入 {targetPart.Label} ({FormatSize(fileSize)})..."));
+
+                                using (var fs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024))
+                                {
+                                    bool res = client.WriteDataFromStream(targetPart.Lun, startSector, fs, fileSize, ReportProgress, token);
+                                    if (!res) Log($"写入 {targetPart.Label} 失败");
+                                }
+
+                                bytesProcessedGlobal += fileSize;
+                                bytesProcessedCurrentFile = 0;
+                                ReportProgress(0, 0);
+                            }
+                            // ------ [Erase] 擦除 ------
+                            else if (operation == "Erase")
+                            {
+                                long numSectors = long.Parse(targetPart.NumSectors);
+                                Dispatcher.Invoke(() => Log($"正在擦除 {targetPart.Label}..."));
+                                
+                                client.Erase(targetPart.Lun, startSector, numSectors);
+                                
+                                // 擦除很快，直接加进度
+                                long partSize = numSectors * client.SectorSize;
+                                bytesProcessedGlobal += partSize;
+                                ReportProgress(0, 0); // Update UI
                             }
                         }
-                        else if (operation == "Erase")
-                        {
-                            foreach (var part in selectedParts)
-                            {
-                                if (token.IsCancellationRequested)
-                                {
-                                    Log("操作已取消。");
-                                    break;
-                                }
 
-                                Log($"正在擦除 {part.Label}...");
-                                long start = long.Parse(part.StartSector);
-                                long num = long.Parse(part.NumSectors);
-                                if (!client.Erase(part.Lun, start, num))
-                                {
-                                    Log($"擦除 {part.Label} 失败");
-                                }
-                            }
-                        }
-                        
                         client.Reset();
+                        Dispatcher.Invoke(() => 
+                        { 
+                            QCProgressBar.Value = 100; 
+                            SpeedText.Text = "100 %  |  完成"; 
+                            Log($"{operation} 全部完成。");
+                        });
                     }
-                    } // End using client
-
-                    Log($"{operation} 完成。");
-                    Dispatcher.Invoke(() => { QCProgressBar.Value = 100; SpeedText.Text = "完成"; });
                 }
                 catch (Exception ex)
                 {
-                    Log($"错误: {ex.Message}");
+                    Dispatcher.Invoke(() => Log($"操作异常: {ex.Message}"));
                 }
             });
+            SetUIBusy(false);
         }
+
+        // 辅助方法：格式化速度
+        private string FormatSpeed(double bytesPerSecond)
+        {
+            if (bytesPerSecond > 1024 * 1024) return $"{bytesPerSecond / (1024 * 1024):F2} MB/s";
+            if (bytesPerSecond > 1024) return $"{bytesPerSecond / 1024:F2} KB/s";
+            return $"{bytesPerSecond:F0} B/s";
+        }
+
+
 
 
         private void GenerateRawProgram(List<PartitionInfo> parts, string outputPath)
@@ -1434,31 +1384,7 @@ namespace OPLUS_EDL
 
 
 
-        private void ResetBtn_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is System.Windows.Controls.Button btn && btn.ContextMenu != null)
-            {
-                btn.ContextMenu.PlacementTarget = btn;
-                btn.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-                btn.ContextMenu.IsOpen = true;
-            }
-        }
 
-        private async void RebootMenuItem_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is System.Windows.Controls.MenuItem item && item.Tag is string mode)
-            {
-                SetUIBusy(true);
-                try
-                {
-                    await PerformReboot(mode);
-                }
-                finally
-                {
-                    SetUIBusy(false);
-                }
-            }
-        }
 
         private async Task PerformReboot(string tag)
         {
@@ -1688,165 +1614,175 @@ namespace OPLUS_EDL
         private async void DeviceInfoBtn_Click(object sender, RoutedEventArgs e)
         {
             SetUIBusy(true);
-            string? port = await WaitForPortAsync();
-            if (string.IsNullOrEmpty(port))
-            {
-                SetUIBusy(false);
-                return;
-            }
-
-            await Task.Run(() =>
-            {
-                try
-                {
-                    Log("正在尝试读取设备信息 (Sahara/Firehose)...");
-                    
-                    // 1. Try Sahara Mode First
-                    Dictionary<string, string>? saharaInfo = null;
-                    try
-                    {
-                        using (var sahara = new SaharaClient(port, (s) => { }, null))
-                        {
-                            saharaInfo = sahara.GetDeviceInfo();
-                        }
-                    }
-                    catch { /* Ignore Sahara errors, might be in Firehose mode */ }
-
-                    if (saharaInfo != null && saharaInfo.Count > 0)
-                    {
-                        Log("================ 设备信息 (Sahara) ================");
-                        if (saharaInfo.ContainsKey("Serial")) Log($"Serial:      {saharaInfo["Serial"]}");
-                        if (saharaInfo.ContainsKey("HWID"))   Log($"HWID:        {saharaInfo["HWID"]}");
-                        if (saharaInfo.ContainsKey("PKHash")) Log($"PKHash:      {saharaInfo["PKHash"]}");
-                        if (saharaInfo.ContainsKey("SBLVersion")) Log($"SBL Version: {saharaInfo["SBLVersion"]}");
-                        Log("===================================================");
-                        return;
-                    }
-
-                    // 2. Fallback to Firehose Mode
-                    StringBuilder logBuffer = new StringBuilder();
-                    Action<string> capturingLogger = (s) => {
-                        Log(s);
-                        logBuffer.AppendLine(s);
-                    };
-
-                    using (var client = new FirehoseClient(port, capturingLogger))
-                    {
-                        client.Configure();
-                    }
-                    string output = logBuffer.ToString();
-                    
-                    // Parse output
-                    string psn = ParseLogValue(output, "INFO: PSN:");
-                    string socId = ParseLogValue(output, "INFO: Chip serial num:");
-                    string chipId = ParseLogValue(output, "CHIPID:");
-                    
-                    // Clean up SOCID (remove 0x prefix if needed, handle hex)
-                    // qctool.bat does some complex sed replacement to uppercase, C# is easier.
-                    if (!string.IsNullOrEmpty(socId)) socId = socId.ToUpper().Replace("0X", "");
-
-                    // Try to construct ChipID if missing (logic from qctool.bat)
-                    if (string.IsNullOrEmpty(chipId) && !string.IsNullOrEmpty(psn) && !string.IsNullOrEmpty(socId))
-                    {
-                        chipId = psn + socId;
-                        // qctool checks length, we can just log it
-                    }
-
-                    // Lock state
-                    string lockState = "Unknown";
-                    if (output.Contains("Lock state: locked")) lockState = "Locked";
-                    else if (output.Contains("Lock state: unlock")) lockState = "Unlocked";
-
-                    Log("================ 设备信息 ================");
-                    Log($"PSN:       {psn}");
-                    Log($"SOC ID:    {socId}");
-                    Log($"Chip ID:   {chipId}");
-                    Log($"BL Lock:   {lockState}");
-                    Log("==========================================");
-
-                }
-                catch (Exception ex)
-                {
-                    Log($"读取设备信息失败: {ex.Message}");
-                }
-            });
-            SetUIBusy(false);
-        }
-
-        private string ParseLogValue(string log, string key)
-        {
-            // Simple parser: find key, read until end of line or next token
-            // qctool uses 'tokens=7' etc.
-            // Example: INFO: PSN: 123456
+            _cts = new CancellationTokenSource();
+            var token = _cts.Token;
+            
             try
             {
-                int idx = log.IndexOf(key);
-                if (idx == -1) return "";
-                
-                string sub = log.Substring(idx + key.Length).Trim();
-                int endLine = sub.IndexOfAny(new[] { '\r', '\n' });
-                if (endLine != -1) sub = sub.Substring(0, endLine);
-                
-                // Remove extra quotes or spaces
-                return sub.Trim('\'', ' ', '\t');
-            }
-            catch { return ""; }
-        }
-
-        private void SwitchSlotBtn_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is System.Windows.Controls.Button btn && btn.ContextMenu != null)
-            {
-                btn.ContextMenu.PlacementTarget = btn;
-                btn.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-                btn.ContextMenu.IsOpen = true;
-            }
-        }
-
-        private async void SlotMenuItem_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is System.Windows.Controls.MenuItem item && item.Tag is string slot)
-            {
-                SetUIBusy(true);
                 string? port = await WaitForPortAsync();
-                if (string.IsNullOrEmpty(port))
+                if (string.IsNullOrEmpty(port)) return;
+
+                // 1. Send Loader if checked
+                if (SendLoaderCB.IsChecked == true)
                 {
-                    SetUIBusy(false);
-                    return;
+                    UpdateProgress(0, "正在发送引导...");
+                    bool success = await SendLoader(port, token);
+                    if (!success) return;
                 }
 
                 await Task.Run(() =>
                 {
                     try
                     {
-                        Log($"正在切换到 Slot {slot.ToUpper()}...");
-                        
-                        // Determine value: A=1, B=2
-                        string value = "0";
-                        if (slot.ToLower() == "a") value = "1";
-                        else if (slot.ToLower() == "b") value = "2";
-
                         using (var client = new FirehoseClient(port, Log))
                         {
-                            if (client.SetBootableStorageDrive(int.Parse(value)))
+                            if (token.IsCancellationRequested) return;
+                            
+                            Dispatcher.Invoke(() => SpeedText.Text = "正在读取信息...");
+                            RunConfigure(client);
+
+                            var info = client.GetStorageInfo();
+                            if (info != null)
                             {
-                                Log($"成功发送切换 Slot {slot.ToUpper()} 命令 (LUN {value})。");
-                                Log("请重启设备以生效。");
+                                Log("================ 设备存储信息 ================");
+                                foreach (var kvp in info)
+                                {
+                                    Log($"{kvp.Key}: {kvp.Value}");
+                                }
+                                Log("==============================================");
                             }
                             else
                             {
-                                Log("切换 Slot 失败。");
+                                Log("读取存储信息失败。");
                             }
                         }
                     }
                     catch (Exception ex)
                     {
-                        Log($"切换 Slot 失败: {ex.Message}");
+                        Dispatcher.Invoke(() => Log($"读取信息异常: {ex.Message}"));
+                    }
+                });
+            }
+            finally
+            {
+                SetUIBusy(false);
+            }
+        }
+
+        private async void WipeMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Controls.MenuItem item && item.Tag is string tag)
+            {
+                if (tag == "EraseUserdata")
+                {
+                    var userdata = Partitions.FirstOrDefault(p => p.Label.ToLower() == "userdata");
+                    if (userdata != null)
+                    {
+                        userdata.IsSelected = true;
+                        await PerformOperation("Erase");
+                    }
+                    else
+                    {
+                        Log("未找到 userdata 分区，请先读取分区表。");
+                    }
+                }
+                else if (tag == "EraseFrp")
+                {
+                    var frp = Partitions.FirstOrDefault(p => p.Label.ToLower() == "frp" || p.Label.ToLower() == "config");
+                    if (frp != null)
+                    {
+                        frp.IsSelected = true;
+                        await PerformOperation("Erase");
+                    }
+                    else
+                    {
+                        Log("未找到 FRP 相关分区 (frp/config)，请先读取分区表。");
+                    }
+                }
+            }
+        }
+
+        private void ResetBtn_Click(object sender, RoutedEventArgs e)
+        {
+            if (ResetBtn.ContextMenu != null)
+                ResetBtn.ContextMenu.IsOpen = true;
+        }
+
+        private async void RebootMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Controls.MenuItem item && item.Tag is string tag)
+            {
+                SetUIBusy(true);
+                string? port = await WaitForPortAsync();
+                if (string.IsNullOrEmpty(port)) { SetUIBusy(false); return; }
+
+                await Task.Run(() =>
+                {
+                    try
+                    {
+                        using (var client = new FirehoseClient(port, Log))
+                        {
+                            RunConfigure(client);
+                            
+                            string powerVal = "reset";
+                            if (tag == "Recovery") powerVal = "reset_to_recovery"; 
+                            else if (tag == "Bootloader") powerVal = "reset_to_bootloader"; 
+                            else if (tag == "EDL") powerVal = "reset_to_edl";
+                            else if (tag == "PowerOff") powerVal = "poweroff";
+                            
+                            string xml = $"<?xml version=\"1.0\" ?><data><power value=\"{powerVal}\"/></data>";
+                            if (client.SendRawXml(xml))
+                                Log($"已发送电源命令: {powerVal}");
+                            else
+                                Log($"发送电源命令失败: {powerVal}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Dispatcher.Invoke(() => Log($"重启异常: {ex.Message}"));
                     }
                 });
                 SetUIBusy(false);
             }
         }
+
+        private void SwitchSlotBtn_Click(object sender, RoutedEventArgs e)
+        {
+            if (SwitchSlotBtn.ContextMenu != null)
+                SwitchSlotBtn.ContextMenu.IsOpen = true;
+        }
+
+        private async void SlotMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Controls.MenuItem item && item.Tag is string tag)
+            {
+                SetUIBusy(true);
+                string? port = await WaitForPortAsync();
+                if (string.IsNullOrEmpty(port)) { SetUIBusy(false); return; }
+
+                await Task.Run(() =>
+                {
+                    try
+                    {
+                        using (var client = new FirehoseClient(port, Log))
+                        {
+                            RunConfigure(client);
+                            if (client.SetActiveSlot(tag))
+                                Log($"已切换到 Slot {tag}");
+                            else
+                                Log($"切换 Slot {tag} 失败 (可能不支持)");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Dispatcher.Invoke(() => Log($"切换槽位异常: {ex.Message}"));
+                    }
+                });
+                SetUIBusy(false);
+            }
+        }
+
+
 
         private void WipeDataBtn_Click(object sender, RoutedEventArgs e)
         {
@@ -1858,89 +1794,7 @@ namespace OPLUS_EDL
             }
         }
 
-        private async void WipeMenuItem_Click(object sender, RoutedEventArgs e)
-        {
-             if (sender is System.Windows.Controls.MenuItem item && item.Tag is string tag)
-            {
-                SetUIBusy(true);
-                _cts = new CancellationTokenSource();
-                var token = _cts.Token;
 
-                string? port = await WaitForPortAsync();
-                if (string.IsNullOrEmpty(port))
-                {
-                    SetUIBusy(false);
-                    return;
-                }
-
-                await Task.Run(() =>
-                {
-                    try
-                    {
-                        using (var client = new FirehoseClient(port, Log))
-                        {
-                            if (token.IsCancellationRequested) return;
-
-                            Log($"正在执行: {item.Header}...");
-                            
-                            // Ensure configured
-                            RunConfigure(client);
-
-                            if (tag == "EraseUserdata")
-                            {
-                                Log("正在读取 GPT 以定位 userdata...");
-                                var parts = ReadGpt(client, "ufs", token);
-                                if (token.IsCancellationRequested) return;
-
-                                var userdata = parts.FirstOrDefault(p => p.Label.ToLower() == "userdata");
-                                
-                                if (userdata != null)
-                                {
-                                    if (client.Erase(userdata.Lun, long.Parse(userdata.StartSector), long.Parse(userdata.NumSectors)))
-                                        Log("Userdata 擦除完成。");
-                                    else
-                                        Log("Userdata 擦除失败。");
-                                }
-                                else
-                                {
-                                    Log("未找到 userdata 分区。");
-                                }
-                            }
-                            else
-                            {
-                                // Misc wipes (Oppo, Mi, etc.)
-                                // We will erase the misc partition to reset it.
-                                
-                                Log("正在读取 GPT 以定位 misc...");
-                                var parts = ReadGpt(client, "ufs", token);
-                                if (token.IsCancellationRequested) return;
-
-                                var misc = parts.FirstOrDefault(p => p.Label.ToLower() == "misc");
-                                
-                                if (misc != null)
-                                {
-                                    if (client.Erase(misc.Lun, long.Parse(misc.StartSector), long.Parse(misc.NumSectors)))
-                                        Log($"Misc ({tag}) 擦除完成。");
-                                    else
-                                        Log("Misc 擦除失败。");
-                                }
-                                else
-                                {
-                                    Log("未找到 misc 分区。");
-                                }
-                            }
-                            
-                            client.Reset();
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Log($"操作失败: {ex.Message}");
-                    }
-                });
-                SetUIBusy(false);
-            }
-        }
 
         private async Task<string?> WaitForPortAsync()
         {
@@ -2040,10 +1894,7 @@ namespace OPLUS_EDL
         private void MinimizeButton_Click(object sender, RoutedEventArgs e) => MinimizeBtn_Click(sender, e);
         private void CloseButton_Click(object sender, RoutedEventArgs e) => CloseBtn_Click(sender, e);
 
-        private async void RebootSystemBtn_Click(object sender, RoutedEventArgs e) => await PerformReboot("System");
-        private async void RebootRecBtn_Click(object sender, RoutedEventArgs e) => await PerformReboot("Recovery");
-        private async void RebootBootloaderBtn_Click(object sender, RoutedEventArgs e) => await PerformReboot("Bootloader");
-        private async void RebootEdlBtn_Click(object sender, RoutedEventArgs e) => await PerformReboot("EDL");
+
 
         private string? GetSelectedPort()
         {

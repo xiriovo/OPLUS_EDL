@@ -207,6 +207,16 @@ namespace OPLUS_EDL
             return resp != null && resp.Response == "ACK";
         }
 
+        public bool SetActiveSlot(string slot)
+        {
+            Connect();
+            int slotIndex = (slot.ToLower() == "a" || slot == "0") ? 0 : 1;
+            string command = $"<?xml version=\"1.0\" ?><data><setactiveslot slot=\"{slotIndex}\"/></data>";
+            if (!WriteXml(command)) return false;
+            var resp = WaitForResponse();
+            return resp != null && IsAck(resp);
+        }
+
         public bool SetBootableStorageDrive(int lun)
         {
             Connect();
@@ -477,6 +487,9 @@ namespace OPLUS_EDL
             }
 
             // 发送完毕后，必须等待设备确认写入完成
+            // 这里也需要支持取消，虽然通常很快
+            // WaitForResponse 内部是 10s 超时，我们可以在外部循环调用或者修改 WaitForResponse 支持 Token
+            // 鉴于 WaitForResponse 已经很复杂，这里暂时保持原样，因为它有超时保护
             var finalResp = WaitForResponse();
             return finalResp != null && IsAck(finalResp);
         }
@@ -847,6 +860,21 @@ namespace OPLUS_EDL
                 if (token.IsCancellationRequested) return total;
                 try
                 {
+                    // 检查是否有数据可读，避免长时间阻塞
+                    if (port.BytesToRead == 0)
+                    {
+                        // 简单的自旋等待，配合 Token 检查
+                        // 每次等待 10ms，最多等待 ReadTimeout
+                        int waitTime = 0;
+                        while (port.BytesToRead == 0)
+                        {
+                            if (token.IsCancellationRequested) return total;
+                            Thread.Sleep(10);
+                            waitTime += 10;
+                            if (waitTime > port.ReadTimeout) throw new TimeoutException();
+                        }
+                    }
+
                     int read = port.Read(buffer, offset + total, count - total);
                     if (read == 0) break; 
                     total += read;
